@@ -69,9 +69,12 @@ jobs:
           ls -lh FitTrack-unsigned.ipa
 
       - name: Generate SideStore source.json
+        env:
+          DIST_REPO: ${{ vars.DIST_REPO }}   # e.g. "you/ft-dist-9x2k" (public). Falls back to this repo if unset.
         run: |
-          export GH_OWNER="${GITHUB_REPOSITORY%/*}"
-          export GH_REPO="${GITHUB_REPOSITORY#*/}"
+          TARGET="${DIST_REPO:-$GITHUB_REPOSITORY}"
+          export GH_OWNER="${TARGET%/*}"
+          export GH_REPO="${TARGET#*/}"
           export IPA_PATH="FitTrack-unsigned.ipa"
           node scripts/make-source.js
           cp icons/icon-512.png icon-512.png
@@ -85,9 +88,15 @@ jobs:
             sidestore/source.json
           if-no-files-found: error
 
-      - name: Publish "latest" release (used by the SideStore source)
+      # Publishes the IPA + source.json to the PUBLIC dist repo so SideStore can
+      # auto-update. Only runs once you set the DIST_REPO variable and DIST_TOKEN
+      # secret in this (private) repo's settings. Until then, use the artifact above.
+      - name: Publish to public dist repo (auto-update source)
+        if: ${{ vars.DIST_REPO != '' }}
         uses: softprops/action-gh-release@v2
         with:
+          repository: ${{ vars.DIST_REPO }}
+          token: ${{ secrets.DIST_TOKEN }}
           tag_name: latest
           name: FitTrack latest
           files: |
