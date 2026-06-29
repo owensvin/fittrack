@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>FitTrack</title>
+  <meta name="description" content="Personal calorie, weight and habit tracker">
+  <meta name="theme-color" content="#0a0a12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FitTrack">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <canvas id="fx" class="fx"></canvas>
+
+  <!-- ===== Onboarding ===== -->
+  <div id="onboarding" class="onboarding hidden">
+    <div class="ob-inner">
+      <div class="ob-progress"><div id="obBar" class="ob-bar"></div></div>
+
+      <section class="ob-step" data-step="0">
+        <div class="ob-hero">🔥</div>
+        <h1 class="ob-logo">Fit<span>Track</span></h1>
+        <p class="ob-sub">Let's crush your 30-day cut. First, the basics.</p>
+        <label class="field-label">Sex (for calorie math)</label>
+        <div class="segmented" id="obSex">
+          <button data-val="male" class="active">Male</button>
+          <button data-val="female">Female</button>
+        </div>
+        <label class="field-label" for="obAge">Age</label>
+        <input type="number" id="obAge" inputmode="numeric" value="30" min="14" max="99">
+      </section>
+
+      <section class="ob-step hidden" data-step="1">
+        <h2>Your body</h2>
+        <p class="ob-sub">Where you're starting from today.</p>
+        <label class="field-label" for="obHeight">Height (cm)</label>
+        <input type="number" id="obHeight" inputmode="decimal" value="170">
+        <label class="field-label" for="obWeight">Current weight (kg)</label>
+        <input type="number" id="obWeight" inputmode="decimal" value="77" step="0.1">
+      </section>
+
+      <section class="ob-step hidden" data-step="2">
+        <h2>Your goals</h2>
+        <p class="ob-sub">A short sprint and the bigger picture.</p>
+        <label class="field-label" for="obSprintW">Sprint target (kg)</label>
+        <input type="number" id="obSprintW" inputmode="decimal" value="74" step="0.1">
+        <label class="field-label" for="obSprintD">Sprint by</label>
+        <input type="date" id="obSprintD">
+        <label class="field-label" for="obLongW">Long-term target (kg)</label>
+        <input type="number" id="obLongW" inputmode="decimal" value="65" step="0.1">
+        <label class="field-label" for="obLongD">Long-term by</label>
+        <input type="date" id="obLongD">
+      </section>
+
+      <section class="ob-step hidden" data-step="3">
+        <h2>Activity & pace</h2>
+        <p class="ob-sub">Maintenance ≈ <strong id="obTdee">—</strong> kcal/day.</p>
+        <label class="field-label">Daily activity (outside workouts)</label>
+        <div class="option-list compact" id="obActivity">
+          <button data-val="1.2" class="active"><strong>Sedentary</strong><span>Desk job</span></button>
+          <button data-val="1.375"><strong>Lightly active</strong><span>Walks 1–3×/wk</span></button>
+          <button data-val="1.55"><strong>Active</strong><span>Exercise 3–5×/wk</span></button>
+        </div>
+        <label class="field-label">Pace</label>
+        <div class="option-list" id="obPace">
+          <button data-val="750" class="active"><strong>Aggressive</strong><span>≈0.75 kg/week</span></button>
+          <button data-val="500"><strong>Strong</strong><span>≈0.5 kg/week</span></button>
+          <button data-val="300"><strong>Steady</strong><span>≈0.3 kg/week</span></button>
+        </div>
+        <div class="ob-summary" id="obSummary"></div>
+      </section>
+
+      <div class="ob-nav">
+        <button id="obBack" class="btn ghost hidden">Back</button>
+        <button id="obNext" class="btn primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== App ===== -->
+  <div id="app" class="app hidden">
+
+    <!-- TODAY -->
+    <main id="view-today" class="view">
+      <header class="day-header">
+        <button class="day-nav" id="dayPrev"><span class="ic" data-ic="chevL"></span></button>
+        <div class="day-title">
+          <h1 id="dayLabel">Today</h1>
+          <span id="daySub" class="day-sub"></span>
+        </div>
+        <button class="day-nav" id="dayNext"><span class="ic" data-ic="chevR"></span></button>
+      </header>
+
+      <!-- Hero: rings + buddy -->
+      <section class="hero">
+        <div class="rings-wrap" id="ringsWrap"></div>
+        <div class="buddy">
+          <div class="buddy-face" id="buddyFace">🙂</div>
+          <div class="buddy-bubble" id="buddyBubble">Let's get logging!</div>
+        </div>
+      </section>
+
+      <div class="ring-legend" id="ringLegend"></div>
+
+      <!-- Streak strip -->
+      <div class="streak-strip" id="streakStrip"></div>
+
+      <!-- One-tap quick log -->
+      <section class="card quick-card" id="quickCard">
+        <div class="card-head"><h3><span class="ic t-amber" data-ic="bolt"></span>Quick log</h3></div>
+        <div class="quick-row" id="quickRow"></div>
+      </section>
+
+      <!-- Meals -->
+      <section id="mealList"></section>
+
+      <!-- Activity / Walk -->
+      <section class="card">
+        <div class="card-head">
+          <h3><span class="ic t-green" data-ic="walk"></span>Activity</h3>
+          <button class="add-btn" id="exerciseAddBtn"><span class="ic" data-ic="plus"></span></button>
+        </div>
+        <ul class="meal-items" id="exerciseList"></ul>
+        <p class="muted" id="exerciseSummary">No activity logged yet</p>
+      </section>
+
+      <!-- Water -->
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="drop"></span>Water</h3><span id="waterText" class="muted"></span></div>
+        <div class="water-row">
+          <button class="round-btn" id="waterMinus">−</button>
+          <div class="water-glasses" id="waterGlasses"></div>
+          <button class="round-btn" id="waterPlus">+</button>
+        </div>
+      </section>
+
+      <!-- Supplements -->
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><span id="suppCount" class="muted"></span></div>
+        <ul id="suppList" class="habit-list"></ul>
+      </section>
+
+      <!-- Fasting -->
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Fasting 16:8</h3><span id="fastStatus" class="muted"></span></div>
+        <div class="bar slim"><div id="fastBar" class="bar-fill fast"></div></div>
+        <div class="fast-row">
+          <span id="fastTimer" class="fast-timer">Not fasting</span>
+          <button id="fastBtn" class="btn small">Start fast</button>
+        </div>
+      </section>
+
+      <div class="bottom-space"></div>
+    </main>
+
+    <!-- PROGRESS -->
+    <main id="view-progress" class="view hidden">
+      <header class="page-header"><h1>Progress</h1></header>
+      <section id="goalCards"></section>
+      <section class="card">
+        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
+        <div id="weightChart" class="chart"></div>
+        <p class="legend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Waist</h3><span class="muted" id="waistDelta"></span></div>
+        <div id="waistChart" class="chart"></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Calories — last 14 days</h3></div>
+        <div id="calChart" class="chart"></div>
+      </section>
+      <section class="card" id="weekCard"></section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-amber" data-ic="trophy"></span>Badges</h3><span class="muted" id="badgeCount"></span></div>
+        <div id="badgeGrid" class="badge-grid"></div>
+      </section>
+      <div class="bottom-space"></div>
+    </main>
+
+    <!-- BODY -->
+    <main id="view-body" class="view hidden">
+      <header class="page-header"><h1>Body</h1></header>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-green" data-ic="scale"></span>Weight</h3></div>
+        <div class="entry-row">
+          <input type="number" id="weightInput" inputmode="decimal" step="0.1" placeholder="kg">
+          <button class="btn primary" id="weightSave">Log</button>
+        </div>
+        <ul class="entry-list" id="weightList"></ul>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="ruler"></span>Waist</h3><span class="muted">weekly, at navel</span></div>
+        <div class="entry-row">
+          <input type="number" id="waistInput" inputmode="decimal" step="0.5" placeholder="cm">
+          <button class="btn primary" id="waistSave">Log</button>
+        </div>
+        <ul class="entry-list" id="waistList"></ul>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="camera"></span>Progress photos</h3><span class="muted">on-device only</span></div>
+        <label class="btn ghost full" for="photoInput">Add photo</label>
+        <input type="file" id="photoInput" accept="image/*" hidden>
+        <div id="photoGrid" class="photo-grid"></div>
+      </section>
+      <div class="bottom-space"></div>
+    </main>
+
+    <!-- SETTINGS -->
+    <main id="view-settings" class="view hidden">
+      <header class="page-header"><h1>Settings</h1></header>
+      <section class="card">
+        <div class="card-head"><h3>Targets</h3></div>
+        <div class="form-grid">
+          <label>Calorie target <input type="number" id="setKcal" inputmode="numeric"></label>
+          <label>Protein target (g) <input type="number" id="setProtein" inputmode="numeric"></label>
+          <label>Water target (ml) <input type="number" id="setWater" inputmode="numeric"></label>
+          <label>Active-calorie goal <input type="number" id="setMove" inputmode="numeric"></label>
+          <label>Activity
+            <select id="setActivity">
+              <option value="1.2">Sedentary</option>
+              <option value="1.375">Lightly active</option>
+              <option value="1.55">Active</option>
+              <option value="1.725">Very active</option>
+            </select>
+          </label>
+        </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Add exercise calories to budget</div><div class="muted">Off is better for steady fat loss</div></div>
+          <label class="switch"><input type="checkbox" id="setEatBack"><span class="knob"></span></label>
+        </div>
+        <button class="btn primary full" id="settingsSave">Save</button>
+        <p class="muted center" id="settingsInfo"></p>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Goals</h3></div>
+        <div class="form-grid">
+          <label>Sprint target (kg) <input type="number" id="setSprintW" step="0.1" inputmode="decimal"></label>
+          <label>Sprint by <input type="date" id="setSprintD"></label>
+          <label>Long-term target (kg) <input type="number" id="setLongW" step="0.1" inputmode="decimal"></label>
+          <label>Long-term by <input type="date" id="setLongD"></label>
+        </div>
+        <button class="btn primary full" id="goalsSave">Save goals</button>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-amber" data-ic="sparkle"></span>AI photo estimates</h3></div>
+        <p class="muted" style="margin-bottom:10px">Paste an Anthropic API key to estimate calories from a meal photo. Stored only on this device; each photo costs a fraction of a cent.</p>
+        <input type="password" id="setApiKey" placeholder="sk-ant-...">
+        <button class="btn ghost full" id="apiKeySave">Save key</button>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Appearance</h3></div>
+        <div class="segmented" id="themeSeg">
+          <button data-val="dark" class="active">Dark</button>
+          <button data-val="light">Light</button>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Data</h3></div>
+        <p class="muted" style="margin-bottom:10px">Your data lives only on this device and survives app updates.</p>
+        <button class="btn ghost full" id="exportBtn">Export backup (JSON)</button>
+        <label class="btn ghost full" for="importInput">Import backup</label>
+        <input type="file" id="importInput" accept="application/json" hidden>
+        <button class="btn danger full" id="resetBtn">Reset all data</button>
+        <p class="muted center" id="versionInfo"></p>
+      </section>
+      <div class="bottom-space"></div>
+    </main>
+
+    <!-- Tab bar -->
+    <nav class="tabbar">
+      <button class="tab active" data-view="today"><span class="ic" data-ic="home"></span>Today</button>
+      <button class="tab" data-view="progress"><span class="ic" data-ic="chart"></span>Progress</button>
+      <button class="tab" data-view="body"><span class="ic" data-ic="person"></span>Body</button>
+      <button class="tab" data-view="settings"><span class="ic" data-ic="sliders"></span>Settings</button>
+    </nav>
+  </div>
+
+  <!-- ===== Food sheet ===== -->
+  <div id="foodSheet" class="sheet hidden">
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2 id="sheetTitle">Add food</h2>
+        <button class="sheet-close" id="sheetClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <input type="search" id="foodSearch" placeholder="Search foods…" autocomplete="off">
+      <div class="chips" id="foodTabs">
+        <button data-tab="all" class="active">All</button>
+        <button data-tab="recent">Recents</button>
+        <button data-tab="fav">Favorites</button>
+        <button data-tab="custom">Custom</button>
+        <button data-tab="online">Online</button>
+      </div>
+      <div id="foodList" class="food-list"></div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="scanBtn"><span class="ic" data-ic="barcode"></span>Scan</button>
+        <button class="btn ghost" id="aiBtn"><span class="ic" data-ic="sparkle"></span>AI photo</button>
+        <button class="btn ghost" id="quickAddBtn"><span class="ic" data-ic="bolt"></span>Quick add</button>
+        <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="plus"></span>Custom</button>
+      </div>
+      <input type="file" id="aiPhotoInput" accept="image/*" capture="environment" hidden>
+    </div>
+  </div>
+
+  <!-- ===== Barcode scanner ===== -->
+  <div id="scanSheet" class="sheet hidden">
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2>Scan barcode</h2>
+        <button class="sheet-close" id="scanClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="scan-wrap">
+        <video id="scanVideo" playsinline muted></video>
+        <div class="scan-frame"></div>
+      </div>
+      <p class="muted center" id="scanStatus">Point the camera at a barcode</p>
+    </div>
+  </div>
+
+  <!-- ===== Food detail / qty ===== -->
+  <div id="detailSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="detailName">Food</h2>
+        <button class="sheet-close" id="detailClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <p class="muted" id="detailServing"></p>
+      <div class="qty-row">
+        <button class="qty-btn" id="qtyMinus">−</button>
+        <input type="number" id="qtyInput" inputmode="decimal" value="1" step="0.5" min="0.1">
+        <span id="qtyUnit" class="muted">×</span>
+        <button class="qty-btn" id="qtyPlus">+</button>
+      </div>
+      <div class="macro-preview" id="macroPreview"></div>
+      <button class="btn primary full" id="detailAdd">Add</button>
+    </div>
+  </div>
+
+  <!-- ===== Quick add / custom food / AI result ===== -->
+  <div id="quickSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="quickTitle">Quick add</h2>
+        <button class="sheet-close" id="quickClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <p class="muted hidden" id="qNote" style="margin-bottom:10px"></p>
+      <div class="form-grid">
+        <label>Name <input type="text" id="qName" placeholder="e.g. Lunch out"></label>
+        <label>Calories <input type="number" id="qKcal" inputmode="numeric" placeholder="kcal"></label>
+        <label>Protein (g) <input type="number" id="qProt" inputmode="decimal" placeholder="optional"></label>
+        <label>Carbs (g) <input type="number" id="qCarb" inputmode="decimal" placeholder="optional"></label>
+        <label>Fat (g) <input type="number" id="qFat" inputmode="decimal" placeholder="optional"></label>
+        <label id="qServingWrap" class="hidden">Serving label <input type="text" id="qServing" placeholder="e.g. 1 bowl"></label>
+      </div>
+      <button class="btn primary full" id="quickSave">Add</button>
+    </div>
+  </div>
+
+  <!-- ===== Exercise picker ===== -->
+  <div id="exerciseSheet" class="sheet hidden">
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2>Log activity</h2>
+        <button class="sheet-close" id="exerciseClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div id="exerciseListPicker" class="food-list"></div>
+    </div>
+  </div>
+
+  <div id="exDetailSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="exDetailName">Activity</h2>
+        <button class="sheet-close" id="exDetailClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <label class="field-label">Duration (minutes)</label>
+      <div class="chips" id="exDurChips">
+        <button data-min="15">15</button>
+        <button data-min="30" class="active">30</button>
+        <button data-min="45">45</button>
+        <button data-min="60">60</button>
+        <button data-min="90">90</button>
+      </div>
+      <input type="number" id="exMins" inputmode="numeric" value="30">
+      <div class="macro-preview" id="exPreview" style="margin-top:14px"></div>
+      <button class="btn primary full" id="exAdd">Add</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/foods.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

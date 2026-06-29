@@ -1,0 +1,27 @@
+{
+  "name": "FitTrack (Private)",
+  "identifier": "app.fittrack.personal.source",
+  "subtitle": "Personal weight-loss tracker",
+  "iconURL": "https://github.com/OWNER/REPO/releases/latest/download/icon-512.png",
+  "apps": [
+    {
+      "name": "FitTrack",
+      "bundleIdentifier": "app.fittrack.personal",
+      "developerName": "Private build",
+      "subtitle": "Calorie, weight & habit tracker",
+      "localizedDescription": "Personal calorie, weight and habit tracker with rings, streaks, supplements, walk tracking and dual goals.",
+      "iconURL": "https://github.com/OWNER/REPO/releases/latest/download/icon-512.png",
+      "tintColor": "2ee6a6",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "2.0.0",
+          "date": "2026-06-29",
+          "downloadURL": "https://github.com/OWNER/REPO/releases/latest/download/FitTrack-unsigned.ipa",
+          "size": 0,
+          "minOSVersion": "14.0"
+        }
+      ]
+    }
+  ]
+}

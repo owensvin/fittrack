@@ -1,0 +1,12 @@
+{
+  "appId": "app.fittrack.personal",
+  "appName": "FitTrack",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#0a0a12"
+  },
+  "server": {
+    "iosScheme": "fittrack"
+  }
+}

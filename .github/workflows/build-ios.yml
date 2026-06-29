@@ -1,0 +1,96 @@
+name: Build iOS IPA (unsigned)
+
+# Builds an UNSIGNED .ipa for sideloading via SideStore/AltStore.
+# SideStore re-signs the app on your device with your own Apple ID,
+# so no Apple Developer account or signing certificate is needed here.
+
+on:
+  workflow_dispatch:        # run manually from the Actions tab
+  push:
+    branches: [ main ]
+    paths:
+      - "index.html"
+      - "css/**"
+      - "js/**"
+      - "icons/**"
+      - "manifest.webmanifest"
+      - "capacitor.config.json"
+      - "package.json"
+      - "scripts/**"
+      - ".github/workflows/build-ios.yml"
+
+permissions:
+  contents: write           # needed to publish the release
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Stage web assets
+        run: npm run stage
+
+      - name: Add iOS platform
+        run: npx cap add ios
+
+      - name: Sync web assets into iOS project
+        run: npx cap sync ios
+
+      - name: Build unsigned .app
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package into .ipa
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
+          echo "Found app: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r FitTrack-unsigned.ipa Payload >/dev/null
+          ls -lh FitTrack-unsigned.ipa
+
+      - name: Generate SideStore source.json
+        run: |
+          export GH_OWNER="${GITHUB_REPOSITORY%/*}"
+          export GH_REPO="${GITHUB_REPOSITORY#*/}"
+          export IPA_PATH="FitTrack-unsigned.ipa"
+          node scripts/make-source.js
+          cp icons/icon-512.png icon-512.png
+
+      - name: Upload IPA artifact (always available, even on a private repo)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitTrack-ipa
+          path: |
+            FitTrack-unsigned.ipa
+            sidestore/source.json
+          if-no-files-found: error
+
+      - name: Publish "latest" release (used by the SideStore source)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: FitTrack latest
+          files: |
+            FitTrack-unsigned.ipa
+            sidestore/source.json
+            icon-512.png
