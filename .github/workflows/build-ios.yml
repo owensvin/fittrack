@@ -1,11 +1,12 @@
 name: Build iOS IPA (unsigned)
 
-# Builds an UNSIGNED .ipa for sideloading via SideStore/AltStore.
-# SideStore re-signs the app on your device with your own Apple ID,
-# so no Apple Developer account or signing certificate is needed here.
+# Builds an UNSIGNED .ipa for sideloading via SideStore/AltStore and publishes
+# it (with a SideStore source.json) to this repo's "latest" release.
+# SideStore re-signs the app on your device with your own Apple ID, so no Apple
+# Developer account or signing certificate is needed here.
 
 on:
-  workflow_dispatch:        # run manually from the Actions tab
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths:
@@ -20,7 +21,7 @@ on:
       - ".github/workflows/build-ios.yml"
 
 permissions:
-  contents: write           # needed to publish the release
+  contents: write           # publish the release on this repo
 
 jobs:
   build:
@@ -46,14 +47,18 @@ jobs:
       - name: Sync web assets into iOS project
         run: npx cap sync ios
 
-      - name: Build unsigned .app
+      - name: Build unsigned .app (version stamped from package.json)
         run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Building version $VERSION (build ${{ github.run_number }})"
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -63,23 +68,21 @@ jobs:
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
           echo "Found app: $APP"
+          echo "Bundle version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -r FitTrack-unsigned.ipa Payload >/dev/null
           ls -lh FitTrack-unsigned.ipa
 
       - name: Generate SideStore source.json
-        env:
-          DIST_REPO: ${{ vars.DIST_REPO }}   # e.g. "you/ft-dist-9x2k" (public). Falls back to this repo if unset.
         run: |
-          TARGET="${DIST_REPO:-$GITHUB_REPOSITORY}"
-          export GH_OWNER="${TARGET%/*}"
-          export GH_REPO="${TARGET#*/}"
+          export GH_OWNER="${GITHUB_REPOSITORY%/*}"
+          export GH_REPO="${GITHUB_REPOSITORY#*/}"
           export IPA_PATH="FitTrack-unsigned.ipa"
           node scripts/make-source.js
           cp icons/icon-512.png icon-512.png
 
-      - name: Upload IPA artifact (always available, even on a private repo)
+      - name: Upload artifact (backup download)
         uses: actions/upload-artifact@v4
         with:
           name: FitTrack-ipa
@@ -88,15 +91,9 @@ jobs:
             sidestore/source.json
           if-no-files-found: error
 
-      # Publishes the IPA + source.json to the PUBLIC dist repo so SideStore can
-      # auto-update. Only runs once you set the DIST_REPO variable and DIST_TOKEN
-      # secret in this (private) repo's settings. Until then, use the artifact above.
-      - name: Publish to public dist repo (auto-update source)
-        if: ${{ vars.DIST_REPO != '' }}
+      - name: Publish "latest" release (SideStore source lives here)
         uses: softprops/action-gh-release@v2
         with:
-          repository: ${{ vars.DIST_REPO }}
-          token: ${{ secrets.DIST_TOKEN }}
           tag_name: latest
           name: FitTrack latest
           files: |
