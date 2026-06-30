@@ -1,53 +1,42 @@
-# FitTrack — build the IPA & sideload with SideStore
+# FitTrack — build & sideload (single public repo)
 
-This produces an **unsigned `.ipa`** in the cloud (no Mac needed) and installs it
-privately on your iPhone. It is **never** added to your public SideStore source,
-so your Flashback users can't see it.
+Repo: **`owensvin/fittrack`** (public, on a dedicated account unrelated to your
+other projects). Every push to `main` that touches the app builds an unsigned
+`.ipa` on a free GitHub Actions macOS runner and publishes it — together with a
+SideStore `source.json` — to this repo's **`latest`** release. SideStore re-signs
+the app on your device with your own Apple ID, so no Mac, no Apple Developer
+account, and no signing certificate are needed.
 
-## One-time setup
+## Install / update on your iPhone
 
-1. Create a **private** GitHub repo (e.g. `fittrack`). Keep it private — this is your
-   personal app and the easiest way to keep it off any shared source.
-2. Push this folder to it:
-   ```sh
-   git init
-   git add .
-   git commit -m "FitTrack v2"
-   git branch -M main
-   git remote add origin https://github.com/<you>/fittrack.git
-   git push -u origin main
-   ```
-   (`node_modules/`, `ios/`, `www/`, and `*.ipa` are git-ignored — only source is pushed.)
+SideStore → **Sources** → ＋ → add:
 
-## Build the IPA
+```
+https://github.com/owensvin/fittrack/releases/latest/download/source.json
+```
 
-- The push to `main` automatically triggers the **Build iOS IPA (unsigned)** workflow.
-  You can also run it manually: repo → **Actions** tab → *Build iOS IPA (unsigned)* → **Run workflow**.
-- When it finishes (~5–8 min), open the run and download the **`FitTrack-ipa`** artifact
-  (a zip containing `FitTrack-unsigned.ipa`).
+FitTrack shows up under that source → tap **Get** (or **Update**). Free-account
+signing refreshes every ~7 days; SideStore does that automatically in the
+background.
 
-> Free GitHub Actions includes plenty of macOS minutes for a personal app. No Apple
-> Developer account and no signing certificate are required — the build is unsigned on
-> purpose because SideStore signs it on-device with your own free Apple ID.
+## How updates ship
 
-## Sideload with SideStore
+You ask for a change → Claude bumps the `version` in `package.json`, commits, and
+pushes to `main` → CI builds + republishes the `latest` release → SideStore shows
+an update. Your on-device data is always preserved (native storage; updates don't
+touch it). Still worth using Settings → **Export backup** occasionally.
 
-1. Get the `.ipa` onto your iPhone (AirDrop, iCloud Drive, or download in Safari → Files).
-2. Open **SideStore** → **My Apps** → **＋** (top-left) → pick `FitTrack-unsigned.ipa`.
-3. SideStore signs it with your Apple ID and installs it. Like any free-account sideload,
-   it refreshes every ~7 days — SideStore does this automatically in the background.
+### Why the version bump matters
 
-That's it. Because you installed the IPA directly (not via a source URL), it stays
-private to your device.
+SideStore refuses to install if the version in `source.json` doesn't match the
+version baked into the IPA. The workflow stamps the IPA's `CFBundleShortVersionString`
+from `package.json`'s `version` at build time, so the two always agree — but you
+must **increment `package.json` `version`** for SideStore to recognise a new build
+as an update.
 
-## Updating later
+## Building manually
 
-Change any web file → push to `main` → download the new artifact → reinstall in SideStore
-over the old one. **Your data is preserved** — it lives in the app's native WKWebView
-storage, which updates don't touch. (Still worth using Settings → *Export backup* now and then.)
-
-## Want it as a plain PWA too?
-
-The repo root is also a working PWA. Enable GitHub Pages (Settings → Pages → deploy from
-`main`), open the Pages URL in Safari, and **Share → Add to Home Screen**. Note: iOS may
-evict a PWA's data after ~7 days of non-use — the sideloaded app does not have that problem.
+Repo → **Actions** → *Build iOS IPA (unsigned)* → **Run workflow**. When it
+finishes (~3–5 min) the `latest` release updates, or you can grab the
+`FitTrack-ipa` artifact from the run and install that `.ipa` directly in SideStore
+(My Apps → ＋).
