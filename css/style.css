@@ -250,6 +250,9 @@ input::placeholder { color: var(--muted2); }
 .entry-list li { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); font-size: 0.88rem; }
 .entry-list .row-label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .entry-list .row-label .ic { color: var(--muted); }
+.entry-list .ing-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ingredient-list li { flex-wrap: nowrap; }
+.ingredient-list .row-label { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry-list .d { color: var(--muted); font-size: 0.8rem; }
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 .photo-cell { position: relative; aspect-ratio: 3/4; border-radius: 10px; overflow: hidden; background: var(--card2); }
@@ -295,7 +298,8 @@ input::placeholder { color: var(--muted2); }
 }
 .sheet-panel:not(.small) { min-height: min(60dvh, 480px); }
 .sheet-panel.small { max-height: none; }
-.sheet-panel > *:not(.food-list) { flex-shrink: 0; }
+.sheet-panel > *:not(.food-list):not(.sheet-scroll) { flex-shrink: 0; }
+.sheet-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; max-height: 60dvh; }
 @keyframes slideUp { from { transform: translateY(30px); opacity: 0.5; } to { transform: none; opacity: 1; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .sheet-head h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.2px; }

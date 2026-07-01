@@ -628,17 +628,73 @@ function addFoodItem(item, src) {
 /* ---------- quick add / custom ---------- */
 let quickMode = "quick";
 let editTarget = null;
+let qCustomMode = "simple", customIngredients = [], ingBasis = "100g";
 function openQuick(mode, prefill) {
   quickMode = mode;
   $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : "Quick add";
   $("#qServingWrap").classList.toggle("hidden", mode !== "custom");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
+  $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
   if (mode === "ai") $("#qNote").textContent = "AI's best guess — tweak anything, then add.";
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
   $("#quickSave").textContent = mode === "custom" ? "Save food" : mode === "edit" ? "Save changes" : "Add";
+  customIngredients = []; ingBasis = "100g";
+  $$("#ingBasisChips button").forEach((b) => b.classList.toggle("active", b.dataset.basis === "100g"));
+  $("#ingQtyLabelText").textContent = "Quantity (g)"; $("#ingQty").placeholder = "100";
+  setQCustomMode("simple");
+  renderIngredientList();
   $("#quickSheet").classList.remove("hidden");
 }
+function setQCustomMode(m) {
+  qCustomMode = m;
+  $$("#qCustomModeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === m));
+  $("#qSimpleFields").classList.toggle("hidden", m !== "simple");
+  $("#qIngredientsFields").classList.toggle("hidden", m !== "ingredients");
+}
+$("#qCustomModeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  setQCustomMode(b.dataset.val);
+});
+$("#ingBasisChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  ingBasis = b.dataset.basis;
+  $$("#ingBasisChips button").forEach((x) => x.classList.toggle("active", x === b));
+  $("#ingQtyLabelText").textContent = ingBasis === "100g" ? "Quantity (g)" : "Servings";
+  $("#ingQty").placeholder = ingBasis === "100g" ? "100" : "1";
+});
+function ingredientTotals() {
+  return customIngredients.reduce((s, ing) => ({ kcal: s.kcal + ing.kcal, p: s.p + ing.p, c: s.c + ing.c, f: s.f + ing.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+}
+function renderIngredientList() {
+  $("#ingredientList").innerHTML = customIngredients.length
+    ? customIngredients.map((ing, i) => {
+        const qtyLabel = ing.basis === "100g" ? `${ing.qty} g` : `${ing.qty} × serving`;
+        return `<li><span class="row-label">${esc(ing.name)} <span class="muted">(${qtyLabel})</span></span>
+          <span class="ing-right"><span class="fi-kcal">${r0(ing.kcal)}</span>
+          <button class="fi-del" data-i="${i}"><span class="ic" data-ic="x"></span></button></span></li>`;
+      }).join("")
+    : `<li class="muted" style="border-top:none">No ingredients yet.</li>`;
+  renderIcons($("#ingredientList"));
+  $$("#ingredientList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    customIngredients.splice(+b.dataset.i, 1); renderIngredientList();
+  }));
+  const t = ingredientTotals();
+  $("#ingTotals").innerHTML = `<div><span>${r0(t.kcal)}</span><label>kcal</label></div><div><span>${r1(t.p)}</span><label>protein</label></div><div><span>${r1(t.c)}</span><label>carbs</label></div><div><span>${r1(t.f)}</span><label>fat</label></div>`;
+}
+$("#ingAddBtn").addEventListener("click", () => {
+  const name = $("#ingName").value.trim();
+  const qty = parseFloat($("#ingQty").value);
+  const kcal = parseFloat($("#ingKcal").value);
+  if (!name) return toast("Enter an ingredient name");
+  if (!qty || qty <= 0) return toast("Enter a quantity");
+  if (isNaN(kcal) || kcal < 0) return toast("Enter calories");
+  const p = parseFloat($("#ingProt").value) || 0, c = parseFloat($("#ingCarb").value) || 0, f = parseFloat($("#ingFat").value) || 0;
+  const factor = ingBasis === "100g" ? qty / 100 : qty;
+  customIngredients.push({ name, basis: ingBasis, qty, kcal: kcal * factor, p: p * factor, c: c * factor, f: f * factor });
+  ["ingName", "ingQty", "ingKcal", "ingProt", "ingCarb", "ingFat"].forEach((id) => ($("#" + id).value = ""));
+  renderIngredientList();
+});
 function openEditFood(mealId, i) {
   const item = dayLog(viewDate).meals[mealId][i];
   editTarget = { mealId, i };
@@ -650,12 +706,20 @@ $("#quickClose").addEventListener("click", () => $("#quickSheet").classList.add(
 $("#quickSheet").addEventListener("click", (e) => { if (e.target.id === "quickSheet") $("#quickSheet").classList.add("hidden"); });
 $("#quickSave").addEventListener("click", () => {
   const name = $("#qName").value.trim() || (quickMode === "custom" ? "" : "Quick add");
-  const kcal = parseFloat($("#qKcal").value);
   if (quickMode === "custom" && !name) return toast("Give it a name");
-  if (isNaN(kcal) || kcal < 0) return toast("Enter calories");
-  const food = { name, kcal, p: parseFloat($("#qProt").value) || 0, c: parseFloat($("#qCarb").value) || 0, f: parseFloat($("#qFat").value) || 0 };
+  let food;
+  if (quickMode === "custom" && qCustomMode === "ingredients") {
+    if (!customIngredients.length) return toast("Add at least one ingredient");
+    const t = ingredientTotals();
+    food = { name, kcal: r0(t.kcal), p: r1(t.p), c: r1(t.c), f: r1(t.f) };
+  } else {
+    const kcal = parseFloat($("#qKcal").value);
+    if (isNaN(kcal) || kcal < 0) return toast("Enter calories");
+    food = { name, kcal, p: parseFloat($("#qProt").value) || 0, c: parseFloat($("#qCarb").value) || 0, f: parseFloat($("#qFat").value) || 0 };
+  }
   if (quickMode === "custom") {
     food.id = "c" + Date.now(); food.serving = $("#qServing").value.trim() || "1 serving";
+    if (qCustomMode === "ingredients") food.ingredients = customIngredients;
     state.customFoods.unshift(food); save(); toast("Custom food saved");
     $("#quickSheet").classList.add("hidden"); renderFoodList();
   } else if (quickMode === "edit") {
