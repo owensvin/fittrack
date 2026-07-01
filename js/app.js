@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.3";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -154,6 +154,12 @@ function currentWeight() {
 }
 function tdee() { const p = state.profile; return r0(bmr(p.sex, currentWeight(), p.heightCm, p.age) * p.activity); }
 function kcalFloor(sex) { return sex === "male" ? 1500 : 1200; }
+const PACE_TIERS = [
+  { id: "sustainable", name: "Sustainable", deficit: 600, proteinPerKg: 1.9, note: "No strength loss expected — easiest to maintain long-term." },
+  { id: "moderate", name: "Moderate", deficit: 850, proteinPerKg: 1.9, note: "Noticeable hunger; high protein protects muscle well." },
+  { id: "aggressive", name: "Aggressive", deficit: 950, proteinPerKg: 1.9, note: "Fast progress, but harder to sustain for long stretches." },
+  { id: "verylow", name: "Very-low (not recommended)", deficit: 1200, proteinPerKg: 2.0, note: "Muscle loss, poor training recovery, high rebound risk." },
+];
 function budgetFor(k) {
   const p = state.profile;
   return p.kcalTarget + (p.eatBack ? dayTotals(k).active : 0);
@@ -1092,7 +1098,31 @@ function renderSettings() {
   $("#reminderInfo").textContent = !state.settings.reminder.enabled ? "" : isNativeApp()
     ? `Reminder set for ${state.settings.reminder.time} daily.`
     : "Reminders only fire in the installed app, not this preview.";
+  renderPaceTiers();
   renderSuppSettings();
+}
+function renderPaceTiers() {
+  const p = state.profile, t = tdee(), cw = currentWeight();
+  $("#paceTiers").innerHTML = PACE_TIERS.map((tier) => {
+    const kcal = Math.max(t - tier.deficit, kcalFloor(p.sex));
+    const protein = r0(cw * tier.proteinPerKg);
+    const active = p.paceTier === tier.id;
+    return `<button data-tier="${tier.id}" class="${active ? "active" : ""}">
+      <strong>${tier.name}</strong>
+      <span>${kcal} kcal · ${protein}g protein</span>
+    </button>`;
+  }).join("");
+  $$("#paceTiers button").forEach((b) => b.addEventListener("click", () => {
+    const tier = PACE_TIERS.find((x) => x.id === b.dataset.tier);
+    const kcal = Math.max(t - tier.deficit, kcalFloor(p.sex));
+    $("#setKcal").value = kcal;
+    $("#setProtein").value = r0(cw * tier.proteinPerKg);
+    $("#paceNote").textContent = tier.note;
+    $$("#paceTiers button").forEach((x) => x.classList.toggle("active", x === b));
+    p.paceTier = tier.id;
+  }));
+  const current = PACE_TIERS.find((x) => x.id === p.paceTier);
+  $("#paceNote").textContent = current ? current.note : "Pick a pace to auto-fill calorie and protein targets below, or set your own.";
 }
 function isNativeApp() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
 async function applyReminder() {
