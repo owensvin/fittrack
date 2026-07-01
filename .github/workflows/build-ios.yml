@@ -47,6 +47,13 @@ jobs:
       - name: Sync web assets into iOS project
         run: npx cap sync ios
 
+      - name: Add required Info.plist permission strings
+        run: |
+          PLIST="ios/App/App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Used to scan food barcodes.'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Used to save progress photos.'" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'Used to attach meal and progress photos.'" "$PLIST" || true
+
       - name: Build unsigned .app (version stamped from package.json)
         run: |
           VERSION=$(node -p "require('./package.json').version")

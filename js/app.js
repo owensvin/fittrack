@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -50,7 +50,20 @@ const ICONS = {
   barcode: '<line x1="4" y1="6" x2="4" y2="18"/><line x1="7" y1="6" x2="7" y2="18"/><line x1="10" y1="6" x2="10" y2="18"/><line x1="14" y1="6" x2="14" y2="18"/><line x1="17" y1="6" x2="17" y2="18"/><line x1="20" y1="6" x2="20" y2="18"/>',
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
   bolt: '<polygon points="13 3 5 13 11 13 10 21 18 10 12 10"/>',
-  trophy: '<path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4v2a3 3 0 0 0 3 3"/><path d="M17 6h3v2a3 3 0 0 1-3 3"/><line x1="12" y1="13" x2="12" y2="17"/><path d="M8 20h8"/><path d="M10 17h4v3h-4z"/>',
+  flame: '<path d="M12 2c1 3-3 4-3 8a3 3 0 0 0 6 0c1.4 1 2 2.8 2 4.5a5 5 0 0 1-10 0C7 10 10 8 12 2z"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/>',
+  sunrise: '<circle cx="12" cy="14" r="4"/><line x1="12" y1="3" x2="12" y2="6"/><line x1="4" y1="14" x2="2" y2="14"/><line x1="22" y1="14" x2="20" y2="14"/><line x1="6" y1="8" x2="4.5" y2="6.5"/><line x1="19.5" y1="6.5" x2="18" y2="8"/><line x1="3" y1="20" x2="21" y2="20"/>',
+  sun: '<circle cx="12" cy="12" r="4.5"/><line x1="12" y1="2" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="22"/><line x1="2" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',
+  bowl: '<path d="M4 12h16a8 4 0 0 1-16 0z"/><line x1="9" y1="8" x2="9" y2="10"/><line x1="12" y1="7" x2="12" y2="10"/><line x1="15" y1="8" x2="15" y2="10"/>',
+  run: '<circle cx="14.5" cy="4.5" r="1.7"/><path d="M9 8l4 1.5 1.5 3.5-1 5"/><path d="M13 9.5L9 12l-3 5"/><path d="M13.5 13l3.5 1 2.5 4"/>',
+  bike: '<circle cx="6" cy="17" r="3.2"/><circle cx="18" cy="17" r="3.2"/><path d="M6 17l4-9h4l4 9"/><path d="M10 8h4"/><path d="M10 17h8"/>',
+  dumbbell: '<rect x="3" y="9.5" width="3" height="5" rx="1"/><rect x="18" y="9.5" width="3" height="5" rx="1"/><line x1="6" y1="12" x2="18" y2="12"/><rect x="7" y="7.5" width="2.4" height="9" rx="0.8"/><rect x="14.6" y="7.5" width="2.4" height="9" rx="0.8"/>',
+  wave: '<path d="M2 10c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>',
+  lotus: '<path d="M12 21c-4-1.5-6-4.5-6-8 2 1 4 1 6 0 2 1 4 1 6 0 0 3.5-2 6.5-6 8z"/><path d="M12 13c-2-3-2-6 0-9 2 3 2 6 0 9z"/>',
+  ball: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/>',
+  ellipse: '<circle cx="12" cy="12" r="9"/><path d="M4 15c3 2 13 2 16 0"/><path d="M4 9c3-2 13-2 16 0"/>',
+  bell: '<path d="M6 17h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4.5z"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0"/>',
 };
 function renderIcons(root = document) {
   $$("[data-ic]", root).forEach((el) => {
@@ -64,31 +77,25 @@ function renderIcons(root = document) {
 
 /* ---------- data tables ---------- */
 const MEALS = [
-  { id: "breakfast", label: "Breakfast", emoji: "🌅" },
-  { id: "lunch", label: "Lunch", emoji: "☀️" },
-  { id: "dinner", label: "Dinner", emoji: "🌙" },
-  { id: "snacks", label: "Snacks", emoji: "🍿" },
+  { id: "breakfast", label: "Breakfast", ic: "sunrise" },
+  { id: "lunch", label: "Lunch", ic: "sun" },
+  { id: "dinner", label: "Dinner", ic: "moon" },
+  { id: "snacks", label: "Snacks", ic: "bowl" },
 ];
 const EXERCISES = [
-  { id: "walk", name: "Brisk walk", emoji: "🚶", met: 4.3 },
-  { id: "powerwalk", name: "Power walk", emoji: "🚶‍♂️", met: 5.0 },
-  { id: "run", name: "Running", emoji: "🏃", met: 9.8 },
-  { id: "cycle", name: "Cycling", emoji: "🚴", met: 7.5 },
-  { id: "weights", name: "Weight training", emoji: "🏋️", met: 5.0 },
-  { id: "swim", name: "Swimming", emoji: "🏊", met: 7.0 },
-  { id: "hiit", name: "HIIT", emoji: "🤸", met: 8.0 },
-  { id: "elliptical", name: "Elliptical", emoji: "🏃‍♀️", met: 5.0 },
-  { id: "yoga", name: "Yoga", emoji: "🧘", met: 3.0 },
-  { id: "sports", name: "Sports", emoji: "⚽", met: 7.0 },
+  { id: "walk", name: "Brisk walk", ic: "walk", met: 4.3 },
+  { id: "powerwalk", name: "Power walk", ic: "walk", met: 5.0 },
+  { id: "run", name: "Running", ic: "run", met: 9.8 },
+  { id: "cycle", name: "Cycling", ic: "bike", met: 7.5 },
+  { id: "weights", name: "Weight training", ic: "dumbbell", met: 5.0 },
+  { id: "swim", name: "Swimming", ic: "wave", met: 7.0 },
+  { id: "hiit", name: "HIIT", ic: "bolt", met: 8.0 },
+  { id: "elliptical", name: "Elliptical", ic: "ellipse", met: 5.0 },
+  { id: "yoga", name: "Yoga", ic: "lotus", met: 3.0 },
+  { id: "sports", name: "Sports", ic: "ball", met: 7.0 },
 ];
 function defaultSupplements() {
-  return [
-    { id: "musashi", emoji: "🔥", name: "Musashi Fat Metaboliser", weekday: "30 min before walk", weekend: "with breakfast/lunch" },
-    { id: "fishoil", emoji: "🐟", name: "Fish Oil 1000", note: "joint & heart" },
-    { id: "vitc", emoji: "🍊", name: "Vitamin C 1000", note: "immune" },
-    { id: "magcalD3", emoji: "🦴", name: "Magnesium + Calcium + D3", note: "bones, recovery & immune" },
-    { id: "skin", emoji: "✨", name: "Skin Revitalizer", note: "skin" },
-  ];
+  return [];
 }
 /* ---------- state ---------- */
 const LS_KEY = "fittrack";
@@ -103,7 +110,7 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     fasting: { startTs: null, hours: 16 },
     supplements: defaultSupplements(),
-    settings: { theme: "dark", apiKey: "" },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" } },
   };
 }
 function loadState() {
@@ -112,6 +119,7 @@ function loadState() {
     if (raw) {
       const s = Object.assign(defaultState(), JSON.parse(raw));
       if (!s.supplements || !s.supplements.length) s.supplements = defaultSupplements();
+      if (!s.settings.reminder) s.settings.reminder = { enabled: false, time: "19:00" };
       return s;
     }
   } catch (e) { console.error("load failed", e); }
@@ -171,7 +179,7 @@ function weightTrendPerDay() {
 }
 
 /* ---------- onboarding ---------- */
-const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750 };
+const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750, supplements: [] };
 function showOnboarding() {
   $("#onboarding").classList.remove("hidden");
   const sprint = new Date(); sprint.setDate(sprint.getDate() + 14);
@@ -183,6 +191,25 @@ function showOnboarding() {
   $("#obPace").addEventListener("click", (e) => segPick(e, "#obPace", (v) => { ob.deficit = parseInt(v, 10); obSummary(); }));
   $("#obNext").addEventListener("click", obNext);
   $("#obBack").addEventListener("click", () => obGo(ob.step - 1));
+  $("#obSuppAdd").addEventListener("click", () => {
+    const name = $("#obSuppName").value.trim();
+    if (!name) return toast("Enter a name");
+    ob.supplements.push({ id: "s" + Date.now(), name, note: $("#obSuppNote").value.trim() });
+    $("#obSuppName").value = ""; $("#obSuppNote").value = "";
+    renderObSupps();
+  });
+}
+function renderObSupps() {
+  $("#obSuppList").innerHTML = ob.supplements.length
+    ? ob.supplements.map((s) =>
+        `<li><span class="row-label"><span class="ic" data-ic="pill"></span>${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
+         <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+    : `<li class="muted" style="border-top:none">Nothing added yet.</li>`;
+  renderIcons($("#obSuppList"));
+  $$("#obSuppList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    ob.supplements = ob.supplements.filter((s) => s.id !== b.dataset.id);
+    renderObSupps();
+  }));
 }
 function segPick(e, sel, cb) {
   const b = e.target.closest("button"); if (!b) return;
@@ -197,15 +224,15 @@ function obNext() {
   if (ob.step === 2) {
     if (!parseFloat($("#obSprintW").value) || !parseFloat($("#obLongW").value)) return toast("Enter your goals");
   }
-  if (ob.step === 3) return obFinish();
+  if (ob.step === 4) return obFinish();
   obGo(ob.step + 1);
 }
 function obGo(n) {
-  ob.step = clamp(n, 0, 3);
+  ob.step = clamp(n, 0, 4);
   $$(".ob-step").forEach((s) => s.classList.toggle("hidden", +s.dataset.step !== ob.step));
   $("#obBack").classList.toggle("hidden", ob.step === 0);
-  $("#obNext").textContent = ob.step === 3 ? "Start 🚀" : "Continue";
-  $("#obBar").style.width = (ob.step + 1) * 25 + "%";
+  $("#obNext").textContent = ob.step === 4 ? "Start" : "Continue";
+  $("#obBar").style.width = (ob.step + 1) * 20 + "%";
   if (ob.step === 3) {
     const t = r0(bmr(ob.sex, parseFloat($("#obWeight").value), parseFloat($("#obHeight").value), parseInt($("#obAge").value, 10)) * ob.activity);
     $("#obTdee").textContent = t;
@@ -233,6 +260,7 @@ function obFinish() {
     longGoalKg: parseFloat($("#obLongW").value), longDate: $("#obLongD").value,
   };
   state.weights.push({ d: todayKey(), kg: w });
+  if (ob.supplements.length) state.supplements = ob.supplements;
   save();
   $("#onboarding").classList.add("hidden");
   startApp();
@@ -279,11 +307,6 @@ function streak() {
   if (!dayComplete(k)) k = addDays(k, -1);
   while (dayComplete(k)) { s++; k = addDays(k, -1); }
   return s;
-}
-function walksThisWeek() {
-  let n = 0;
-  for (let i = 0; i < 7; i++) { const l = state.logs[addDays(todayKey(), -i)]; if (l && l.walks && l.walks.length) n++; }
-  return n;
 }
 
 /* ---------- Today ---------- */
@@ -338,19 +361,21 @@ function renderMeals(k) {
     const kcal = items.reduce((s, i) => s + i.kcal, 0);
     return `<section class="card meal-card">
       <div class="meal-head">
-        <h3><span class="meal-emoji">${mm.emoji}</span>${mm.label}</h3>
+        <h3><span class="ic meal-ic" data-ic="${mm.ic}"></span>${mm.label}</h3>
         <span class="meal-kcal">${items.length ? r0(kcal) + " kcal" : ""}</span>
         <button class="add-btn" data-meal="${mm.id}"><span class="ic" data-ic="plus"></span></button>
       </div>
       ${items.length ? `<ul class="meal-items">` + items.map((it, i) =>
-        `<li><span class="fi-name">${esc(it.name)} <span class="fi-qty">${esc(it.qtyLabel || "")}</span></span>
+        `<li data-meal="${mm.id}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${esc(it.qtyLabel || "")}</span></span>
          <span class="fi-kcal">${r0(it.kcal)}</span>
          <button class="fi-del" data-meal="${mm.id}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("") + `</ul>` : ""}
     </section>`;
   }).join("");
   renderIcons($("#mealList"));
   $$("#mealList .add-btn").forEach((b) => b.addEventListener("click", () => openFoodSheet(b.dataset.meal)));
-  $$("#mealList .fi-del").forEach((b) => b.addEventListener("click", () => {
+  $$("#mealList .meal-items li").forEach((li) => li.addEventListener("click", () => openEditFood(li.dataset.meal, +li.dataset.i)));
+  $$("#mealList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
     log.meals[b.dataset.meal].splice(+b.dataset.i, 1); save(); renderToday();
   }));
 }
@@ -359,7 +384,7 @@ function renderExercises(k) {
   const log = dayLog(k);
   const walks = log.walks || [];
   $("#exerciseList").innerHTML = walks.map((w, i) =>
-    `<li><span class="fi-name">${w.emoji || ""} ${esc(w.name)} <span class="fi-qty">${w.mins} min</span></span>
+    `<li><span class="ic" data-ic="${w.ic || "walk"}"></span><span class="fi-name">${esc(w.name)} <span class="fi-qty">${w.mins} min</span></span>
      <span class="fi-kcal">−${r0(w.kcal)}</span>
      <button class="fi-del" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("");
   renderIcons($("#exerciseList"));
@@ -384,11 +409,16 @@ function renderWater(k) {
 function renderSupps(k) {
   const log = dayLog(k);
   const wknd = isWeekend(k);
+  if (!state.supplements.length) {
+    $("#suppList").innerHTML = `<li class="muted" style="border-top:none;cursor:default">Add supplements in Settings to track them here.</li>`;
+    $("#suppCount").textContent = "";
+    return;
+  }
   $("#suppList").innerHTML = state.supplements.map((s) => {
     const done = !!log.supps[s.id];
     const sub = s.weekday ? (wknd ? s.weekend : s.weekday) : (s.note || "");
     return `<li class="${done ? "done" : ""}" data-sid="${s.id}">
-      <span class="habit-emoji">${s.emoji}</span>
+      <span class="ic habit-ic" data-ic="pill"></span>
       <div class="habit-main"><div class="habit-name">${esc(s.name)}</div>${sub ? `<div class="habit-sub">${esc(sub)}</div>` : ""}</div>
       <span class="habit-check"><span class="ic" data-ic="check"></span></span></li>`;
   }).join("");
@@ -426,13 +456,13 @@ function renderFasting() {
     if (rem > 0) {
       $("#fastTimer").textContent = `${h}h ${String(mn).padStart(2, "0")}m fasted`;
       $("#fastStatus").textContent = `${Math.floor(rem)}h ${String(Math.floor((rem * 60) % 60)).padStart(2, "0")}m to ${f.hours}h`;
-    } else { $("#fastTimer").textContent = `${h}h ${String(mn).padStart(2, "0")}m — goal hit ✅`; $("#fastStatus").textContent = "you can eat"; }
+    } else { $("#fastTimer").textContent = `${h}h ${String(mn).padStart(2, "0")}m — goal hit`; $("#fastStatus").textContent = "you can eat"; }
   };
   tick(); fastInterval = setInterval(tick, 30000);
 }
 $("#fastBtn").addEventListener("click", () => {
   const f = state.fasting;
-  if (!f.startTs) { f.startTs = Date.now(); toast("Fast started — stay strong 💪"); }
+  if (!f.startTs) { f.startTs = Date.now(); toast("Fast started"); }
   else { f.lastHours = (Date.now() - f.startTs) / 3600000; f.startTs = null; toast(`Fast ended: ${r1(f.lastHours)} h`); }
   save(); renderFasting();
 });
@@ -441,8 +471,9 @@ $("#fastBtn").addEventListener("click", () => {
 let exSel = null;
 $("#exerciseAddBtn").addEventListener("click", () => {
   $("#exerciseListPicker").innerHTML = EXERCISES.map((e, i) =>
-    `<button class="food-row" data-i="${i}"><span class="fr-emoji">${e.emoji}</span>
+    `<button class="food-row" data-i="${i}"><span class="ic fr-ic" data-ic="${e.ic}"></span>
      <div class="fr-main"><div class="fr-name">${e.name}</div><div class="fr-sub">${r0(e.met * currentWeight() * 0.5)} kcal / 30 min</div></div></button>`).join("");
+  renderIcons($("#exerciseListPicker"));
   $$("#exerciseListPicker .food-row").forEach((el) => el.addEventListener("click", () => openExDetail(EXERCISES[+el.dataset.i])));
   $("#exerciseSheet").classList.remove("hidden");
 });
@@ -451,7 +482,7 @@ $("#exerciseSheet").addEventListener("click", (e) => { if (e.target.id === "exer
 function exKcal(mins) { return exSel.met * currentWeight() * (mins / 60); }
 function openExDetail(ex) {
   exSel = ex;
-  $("#exDetailName").textContent = `${ex.emoji} ${ex.name}`;
+  $("#exDetailName").textContent = ex.name;
   $("#exMins").value = 30;
   $$("#exDurChips button").forEach((b) => b.classList.toggle("active", b.dataset.min === "30"));
   updateExPreview();
@@ -472,7 +503,7 @@ $("#exDetailSheet").addEventListener("click", (e) => { if (e.target.id === "exDe
 $("#exAdd").addEventListener("click", () => {
   const mins = parseInt($("#exMins").value, 10) || 0;
   if (mins <= 0) return;
-  dayLog(viewDate).walks.push({ name: exSel.name, emoji: exSel.emoji, mins, kcal: exKcal(mins) });
+  dayLog(viewDate).walks.push({ name: exSel.name, ic: exSel.ic, mins, kcal: exKcal(mins) });
   save();
   $("#exDetailSheet").classList.add("hidden"); $("#exerciseSheet").classList.add("hidden");
   renderToday(); toast(`Logged ${exSel.name}`);
@@ -596,16 +627,22 @@ function addFoodItem(item, src) {
 
 /* ---------- quick add / custom ---------- */
 let quickMode = "quick";
+let editTarget = null;
 function openQuick(mode, prefill) {
   quickMode = mode;
-  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : (mode === "ai" ? "AI estimate" : "Quick add");
+  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : "Quick add";
   $("#qServingWrap").classList.toggle("hidden", mode !== "custom");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   if (mode === "ai") $("#qNote").textContent = "AI's best guess — tweak anything, then add.";
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
-  $("#quickSave").textContent = mode === "custom" ? "Save food" : "Add";
+  $("#quickSave").textContent = mode === "custom" ? "Save food" : mode === "edit" ? "Save changes" : "Add";
   $("#quickSheet").classList.remove("hidden");
+}
+function openEditFood(mealId, i) {
+  const item = dayLog(viewDate).meals[mealId][i];
+  editTarget = { mealId, i };
+  openQuick("edit", { name: item.name, kcal: item.kcal, p: item.p, c: item.c, f: item.f });
 }
 $("#quickAddBtn").addEventListener("click", () => openQuick("quick"));
 $("#customFoodBtn").addEventListener("click", () => openQuick("custom"));
@@ -621,8 +658,10 @@ $("#quickSave").addEventListener("click", () => {
     food.id = "c" + Date.now(); food.serving = $("#qServing").value.trim() || "1 serving";
     state.customFoods.unshift(food); save(); toast("Custom food saved");
     $("#quickSheet").classList.add("hidden"); renderFoodList();
+  } else if (quickMode === "edit") {
+    dayLog(viewDate).meals[editTarget.mealId][editTarget.i] = { ...food, qtyLabel: "" };
+    save(); renderToday(); $("#quickSheet").classList.add("hidden"); toast("Updated");
   } else {
-    if (quickMode === "ai" || !["breakfast", "lunch", "dinner", "snacks"].includes(sheetMeal)) { /* keep sheetMeal */ }
     addFoodItem({ ...food, qtyLabel: "" }, null);
     $("#quickSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
   }
@@ -636,7 +675,7 @@ $("#aiBtn").addEventListener("click", () => {
 $("#aiPhotoInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; e.target.value = "";
   if (!file) return;
-  toast("Analysing photo… ✨");
+  toast("Analysing photo…");
   try {
     const { b64, mime } = await downscale(file, 1024);
     const est = await aiEstimate(b64, mime);
@@ -688,55 +727,76 @@ async function aiEstimate(b64, mime) {
 }
 
 /* ---------- barcode scan ---------- */
-let scanStream = null, scanTimer = null;
+// Safari/WKWebView (the native app's runtime) doesn't implement the
+// BarcodeDetector API, so scanning is done with html5-qrcode (pure JS/canvas
+// decoding, no native API dependency) instead.
+let html5Qr = null, scanBusy = false;
 $("#scanBtn").addEventListener("click", openScanner);
 $("#scanClose").addEventListener("click", closeScanner);
 $("#scanSheet").addEventListener("click", (e) => { if (e.target.id === "scanSheet") closeScanner(); });
 async function openScanner() {
-  if (!("BarcodeDetector" in window)) { toast("Barcode scan unavailable here — try Online search"); return; }
+  if (typeof Html5Qrcode === "undefined") { toast("Barcode scan unavailable here — try Online search"); return; }
   $("#scanSheet").classList.remove("hidden");
-  $("#scanStatus").textContent = "Point the camera at a barcode";
+  $("#scanStatus").textContent = "Starting camera…";
+  scanBusy = false;
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    const v = $("#scanVideo"); v.srcObject = scanStream; await v.play();
-    const det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-    scanTimer = setInterval(async () => {
-      try {
-        const codes = await det.detect(v);
-        if (codes && codes.length) { const code = codes[0].rawValue; clearInterval(scanTimer); lookupBarcode(code); }
-      } catch (_) {}
-    }, 700);
-  } catch (err) { $("#scanStatus").textContent = "Camera blocked. Allow camera access or use Online search."; }
+    html5Qr = new Html5Qrcode("scanReader", {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+      ],
+      verbose: false,
+    });
+    await html5Qr.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 260, height: 140 } },
+      (code) => { if (!scanBusy) lookupBarcode(code); },
+      () => {},
+    );
+    $("#scanStatus").textContent = "Point the camera at a barcode";
+  } catch (err) {
+    $("#scanStatus").textContent = "Camera blocked. Allow camera access or use Online search.";
+  }
 }
-function closeScanner() {
+async function closeScanner() {
   $("#scanSheet").classList.add("hidden");
-  clearInterval(scanTimer);
-  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
+  if (html5Qr) {
+    const instance = html5Qr; html5Qr = null;
+    try { await instance.stop(); instance.clear(); } catch (_) {}
+  }
 }
 async function lookupBarcode(code) {
+  scanBusy = true;
+  const instance = html5Qr;
+  try { instance && instance.pause(true); } catch (_) {}
   $("#scanStatus").textContent = "Found " + code + " — looking up…";
   try {
     const data = await (await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,brands,nutriments`)).json();
-    if (data.status !== 1 || !data.product) { $("#scanStatus").textContent = "Not in database. Try again or add manually."; setTimeout(rescan, 1200); return; }
+    if (data.status !== 1 || !data.product) { $("#scanStatus").textContent = "Not in database. Try again or add manually."; setTimeout(() => resumeScan(instance), 1200); return; }
     const p = data.product, n = p.nutriments || {};
-    if (n["energy-kcal_100g"] == null) { $("#scanStatus").textContent = "No calorie data for that product."; setTimeout(rescan, 1200); return; }
-    closeScanner();
+    if (n["energy-kcal_100g"] == null) { $("#scanStatus").textContent = "No calorie data for that product."; setTimeout(() => resumeScan(instance), 1200); return; }
+    await closeScanner();
     openDetail({ name: p.product_name || "Product", brand: (p.brands || "").split(",")[0], kcal: +n["energy-kcal_100g"] || 0, p: +n["proteins_100g"] || 0, c: +n["carbohydrates_100g"] || 0, f: +n["fat_100g"] || 0 }, "per100");
-  } catch (e) { $("#scanStatus").textContent = "Lookup failed — check your connection."; setTimeout(rescan, 1200); }
+  } catch (e) { $("#scanStatus").textContent = "Lookup failed — check your connection."; setTimeout(() => resumeScan(instance), 1200); }
 }
-function rescan() { if (!$("#scanSheet").classList.contains("hidden")) openScanner(); }
+function resumeScan(instance) {
+  if ($("#scanSheet").classList.contains("hidden") || !instance) return;
+  scanBusy = false;
+  try { instance.resume(); } catch (_) {}
+  $("#scanStatus").textContent = "Point the camera at a barcode";
+}
 
 /* ---------- Progress ---------- */
 function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); }
 
-function goalCard(title, emoji, tgt, date) {
+function goalCard(title, ic, tgt, date) {
   const p = state.profile, start = p.startWeightKg, cw = currentWeight();
   const lost = start - cw, need = start - tgt;
   const pct = need > 0 ? clamp(lost / need, 0, 1) : (cw <= tgt ? 1 : 0);
   const daysLeft = Math.max(0, daysBetween(todayKey(), date));
   const trend = weightTrendPerDay();
   let dot = "n", pace = `${daysLeft} days left`;
-  if (cw <= tgt) { dot = "g"; pace = "Reached! 🎉"; }
+  if (cw <= tgt) { dot = "g"; pace = "Reached!"; }
   else if (trend !== null && daysLeft > 0) {
     const proj = cw + trend * daysLeft, diff = proj - tgt;
     if (trend >= 0) { dot = "r"; pace = "Not trending down"; }
@@ -745,7 +805,7 @@ function goalCard(title, emoji, tgt, date) {
     else { dot = "r"; pace = `Behind (proj ${r1(proj)}kg)`; }
   }
   return `<div class="goal-card">
-    <div class="goal-top"><span class="goal-name"><span class="ge">${emoji}</span>${title}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
+    <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="${ic}"></span>${title}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
     <div class="goal-nums"><span class="goal-cur">${r1(cw)}</span><span class="goal-arrow">→</span><span class="goal-tgt">${r1(tgt)} kg</span></div>
     <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div></div>
     <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost</span><span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span></div>
@@ -753,7 +813,8 @@ function goalCard(title, emoji, tgt, date) {
 }
 function renderGoalCards() {
   const p = state.profile;
-  $("#goalCards").innerHTML = goalCard("Sprint", "⚡", p.sprintGoalKg, p.sprintDate) + goalCard("Long-term", "🎯", p.longGoalKg, p.longDate);
+  $("#goalCards").innerHTML = goalCard("Sprint", "bolt", p.sprintGoalKg, p.sprintDate) + goalCard("Long-term", "target", p.longGoalKg, p.longDate);
+  renderIcons($("#goalCards"));
 }
 
 function lineChart({ entries, ma, goal, unit, projDays }) {
@@ -789,39 +850,74 @@ function lineChart({ entries, ma, goal, unit, projDays }) {
     <text x="${L - 4}" y="${(Y(vMin + pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMin + pad)}</text>
     ${goalLine}${dots}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}</svg>`;
 }
+function inRange(entries, days) {
+  const from = addDays(todayKey(), -(days - 1));
+  return entries.filter((e) => e.d >= from);
+}
+let weightRange = 30, calRange = 14;
 function renderWeightChart() {
-  const p = state.profile, entries = state.weights, ma = movingAvg(entries);
+  const p = state.profile;
+  const fullMa = movingAvg(state.weights);
+  const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
   const projDays = Math.max(0, daysBetween(todayKey(), p.longDate));
   $("#weightChart").innerHTML = lineChart({ entries, ma, goal: p.sprintGoalKg, unit: "kg", projDays });
-  $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - p.startWeightKg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - p.startWeightKg)} kg since start` : "";
+  $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
+  $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
 }
+$("#weightRangeChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  weightRange = +b.dataset.d; renderWeightChart(); renderWaistChart();
+});
 function renderWaistChart() {
-  const entries = state.waists.map((w) => ({ d: w.d, kg: w.cm })), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
+  const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
+  const entries = inRange(allEntries, weightRange), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
   $("#waistChart").innerHTML = lineChart({ entries, ma, goal: null, unit: "cm", projDays: 0 });
   $("#waistDelta").textContent = state.waists.length >= 2 ? `${(state.waists[state.waists.length - 1].cm - state.waists[0].cm) <= 0 ? "" : "+"}${r1(state.waists[state.waists.length - 1].cm - state.waists[0].cm)} cm since start` : "measure weekly to track belly progress";
 }
 function renderCalChart() {
   const W = 340, H = 150, L = 34, R = 8, T = 12, B = 22, p = state.profile;
-  const days = []; for (let i = 13; i >= 0; i--) days.push(addDays(todayKey(), -i));
+  const n = calRange;
+  const days = []; for (let i = n - 1; i >= 0; i--) days.push(addDays(todayKey(), -i));
   const vals = days.map((d) => dayTotals(d).kcal);
-  const max = Math.max(p.kcalTarget * 1.25, ...vals, 1), bw = (W - L - R) / 14;
+  const max = Math.max(p.kcalTarget * 1.25, ...vals, 1), bw = (W - L - R) / n;
+  const rx = Math.min(3, bw / 3.5);
   const Y = (v) => T + (1 - v / max) * (H - T - B);
-  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > p.kcalTarget; return `<rect x="${(L + i * bw + 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="3" fill="${over ? "var(--amber)" : "var(--green)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
+  const gap = Math.min(4, bw * 0.15);
+  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > p.kcalTarget; return `<rect x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
   $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/><line x1="${L}" y1="${Y(p.kcalTarget).toFixed(1)}" x2="${W - R}" y2="${Y(p.kcalTarget).toFixed(1)}" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".4"/><text x="${W - R}" y="${(Y(p.kcalTarget) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${p.kcalTarget}</text>${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
+  $$("#calRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === calRange));
 }
+$("#calRangeChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  calRange = +b.dataset.d; renderCalChart();
+});
+let summaryPeriod = 7;
 function renderWeekCard() {
-  let kcalSum = 0, kcalDays = 0;
-  for (let i = 6; i >= 0; i--) { const t = dayTotals(addDays(todayKey(), -i)); if (t.items > 0) { kcalSum += t.kcal; kcalDays++; } }
-  const avgK = kcalDays ? r0(kcalSum / kcalDays) : 0, avgDef = kcalDays ? tdee() - avgK : 0, estWeek = r1((avgDef * 7) / 7700);
+  const days = summaryPeriod;
+  let kcalSum = 0, kcalDays = 0, walkDays = 0;
+  for (let i = days - 1; i >= 0; i--) {
+    const dk = addDays(todayKey(), -i);
+    const t = dayTotals(dk);
+    if (t.items > 0) { kcalSum += t.kcal; kcalDays++; }
+    const l = state.logs[dk]; if (l && l.walks && l.walks.length) walkDays++;
+  }
+  const avgK = kcalDays ? r0(kcalSum / kcalDays) : 0, avgDef = kcalDays ? tdee() - avgK : 0, estChange = r1((avgDef * days) / 7700);
   const ma = movingAvg(state.weights); let actual = null;
-  if (ma.length >= 2) { const past = [...ma].reverse().find((m) => m.d <= addDays(todayKey(), -7)); if (past) actual = ma[ma.length - 1].v - past.v; }
-  $("#weekCard").innerHTML = `<div class="card-head"><h3>This week</h3><span class="muted">${kcalDays}/7 logged · ${walksThisWeek()} walks</span></div>
+  if (ma.length >= 2) { const past = [...ma].reverse().find((m) => m.d <= addDays(todayKey(), -days)); if (past) actual = ma[ma.length - 1].v - past.v; }
+  const adherence = r0((kcalDays / days) * 100);
+  $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary</h3></div>
+    <div class="chips" id="summaryChips">
+      <button data-d="7" class="${days === 7 ? "active" : ""}">Week</button>
+      <button data-d="30" class="${days === 30 ? "active" : ""}">Month</button>
+    </div>
+    <p class="muted" style="margin:10px 0 12px">${kcalDays}/${days} days logged (${adherence}%) · ${walkDays} active days</p>
     <div class="stat-grid">
       <div class="stat-box"><div class="v">${avgK || "—"}</div><div class="k">avg kcal / day</div></div>
       <div class="stat-box"><div class="v">${kcalDays ? (avgDef >= 0 ? "−" : "+") + Math.abs(avgDef) : "—"}</div><div class="k">avg deficit</div></div>
-      <div class="stat-box"><div class="v">${kcalDays ? (estWeek >= 0 ? "−" : "+") + Math.abs(estWeek) + " kg" : "—"}</div><div class="k">est. weekly (food)</div></div>
-      <div class="stat-box"><div class="v">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + " kg" : "—"}</div><div class="k">actual 7-day trend</div></div>
+      <div class="stat-box"><div class="v">${kcalDays ? (estChange >= 0 ? "−" : "+") + Math.abs(estChange) + " kg" : "—"}</div><div class="k">est. change (food)</div></div>
+      <div class="stat-box"><div class="v">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + " kg" : "—"}</div><div class="k">actual trend</div></div>
     </div>`;
+  $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));
 }
 /* ---------- Body ---------- */
 function renderBody() {
@@ -843,7 +939,7 @@ $("#waistSave").addEventListener("click", () => {
   const k = todayKey();
   state.waists = state.waists.filter((w) => w.d !== k); state.waists.push({ d: k, cm: v });
   state.waists.sort((a, b) => (a.d < b.d ? -1 : 1)); $("#waistInput").value = "";
-  save(); renderBody(); toast("Waist logged 📏");
+  save(); renderBody(); toast("Waist logged");
 });
 
 /* photos via IndexedDB */
@@ -871,7 +967,7 @@ $("#photoInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; e.target.value = ""; if (!file) return;
   const { b64 } = await downscale(file, 1000);
   const blob = await (await fetch("data:image/jpeg;base64," + b64)).blob();
-  await idbPut({ ts: Date.now(), blob }); renderPhotos(); toast("Photo saved 📷");
+  await idbPut({ ts: Date.now(), blob }); renderPhotos(); toast("Photo saved");
 });
 
 /* ---------- Settings ---------- */
@@ -884,7 +980,63 @@ function renderSettings() {
   $("#settingsInfo").textContent = `BMR ≈ ${r0(bmr(p.sex, currentWeight(), p.heightCm, p.age))} · maintenance ≈ ${tdee()} kcal`;
   $$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === state.settings.theme));
   $("#versionInfo").textContent = "FitTrack v" + APP_VERSION;
+  $("#setReminder").checked = !!state.settings.reminder.enabled;
+  $("#setReminderTime").value = state.settings.reminder.time || "19:00";
+  $("#reminderInfo").textContent = !state.settings.reminder.enabled ? "" : isNativeApp()
+    ? `Reminder set for ${state.settings.reminder.time} daily.`
+    : "Reminders only fire in the installed app, not this preview.";
+  renderSuppSettings();
 }
+function isNativeApp() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+async function applyReminder() {
+  const r = state.settings.reminder;
+  const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
+  if (!isNativeApp() || !LN) { renderSettings(); return; }
+  try {
+    await LN.cancel({ notifications: [{ id: 1 }] });
+    if (r.enabled) {
+      const perm = await LN.requestPermissions();
+      if (perm.display !== "granted") {
+        toast("Notification permission denied");
+        r.enabled = false; save();
+      } else {
+        const [h, m] = r.time.split(":").map(Number);
+        await LN.schedule({ notifications: [{
+          id: 1, title: "FitTrack", body: "Don't forget to log today!",
+          schedule: { on: { hour: h, minute: m }, repeats: true },
+        }] });
+      }
+    }
+  } catch (e) { toast("Couldn't schedule reminder"); }
+  renderSettings();
+}
+$("#setReminder").addEventListener("change", () => {
+  state.settings.reminder.enabled = $("#setReminder").checked;
+  save(); applyReminder();
+});
+$("#setReminderTime").addEventListener("change", () => {
+  state.settings.reminder.time = $("#setReminderTime").value;
+  save(); if (state.settings.reminder.enabled) applyReminder();
+});
+function renderSuppSettings() {
+  $("#suppSettingsList").innerHTML = state.supplements.length
+    ? state.supplements.map((s) =>
+        `<li><span class="row-label"><span class="ic" data-ic="pill"></span>${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
+         <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+    : `<li class="muted" style="border-top:none">No supplements yet — add one below.</li>`;
+  renderIcons($("#suppSettingsList"));
+  $$("#suppSettingsList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    state.supplements = state.supplements.filter((s) => s.id !== b.dataset.id);
+    save(); renderSuppSettings();
+  }));
+}
+$("#suppAddBtn").addEventListener("click", () => {
+  const name = $("#suppName").value.trim();
+  if (!name) return toast("Enter a name");
+  state.supplements.push({ id: "s" + Date.now(), name, note: $("#suppNote").value.trim() });
+  $("#suppName").value = ""; $("#suppNote").value = "";
+  save(); renderSuppSettings(); toast("Supplement added");
+});
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile, kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
   if (kcal && kcal < floor) { toast(`Minimum safe target: ${floor} kcal`); $("#setKcal").value = floor; return; }
@@ -893,13 +1045,13 @@ $("#settingsSave").addEventListener("click", () => {
   p.waterTargetMl = parseInt($("#setWater").value, 10) || p.waterTargetMl;
   p.moveTarget = parseInt($("#setMove").value, 10) || p.moveTarget;
   p.activity = parseFloat($("#setActivity").value); p.eatBack = $("#setEatBack").checked;
-  save(); renderSettings(); toast("Saved ✅");
+  save(); renderSettings(); toast("Saved");
 });
 $("#goalsSave").addEventListener("click", () => {
   const p = state.profile;
   p.sprintGoalKg = parseFloat($("#setSprintW").value) || p.sprintGoalKg; p.sprintDate = $("#setSprintD").value || p.sprintDate;
   p.longGoalKg = parseFloat($("#setLongW").value) || p.longGoalKg; p.longDate = $("#setLongD").value || p.longDate;
-  save(); toast("Goals updated 🎯");
+  save(); toast("Goals updated");
 });
 $("#apiKeySave").addEventListener("click", () => { state.settings.apiKey = $("#setApiKey").value.trim(); save(); toast(state.settings.apiKey ? "API key saved" : "API key cleared"); });
 $("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.settings.theme = b.dataset.val; applyTheme(); save(); renderSettings(); });
@@ -924,7 +1076,10 @@ $("#resetBtn").addEventListener("click", () => {
 
 /* ---------- init ---------- */
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
-function startApp() { $("#app").classList.remove("hidden"); applyTheme(); renderIcons(); switchView("today"); }
+function startApp() {
+  $("#app").classList.remove("hidden"); applyTheme(); renderIcons(); switchView("today");
+  if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
+}
 
 renderIcons();
 if (state.profile) { applyTheme(); startApp(); } else { showOnboarding(); }

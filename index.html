@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
   <title>FitTrack</title>
   <meta name="description" content="Personal calorie, weight and habit tracker">
   <meta name="theme-color" content="#0a0a12">
@@ -23,7 +23,7 @@
       <div class="ob-progress"><div id="obBar" class="ob-bar"></div></div>
 
       <section class="ob-step" data-step="0">
-        <div class="ob-hero">🔥</div>
+        <div class="ob-hero"><span class="ic" data-ic="flame"></span></div>
         <h1 class="ob-logo">Fit<span>Track</span></h1>
         <p class="ob-sub">Let's crush your 30-day cut. First, the basics.</p>
         <label class="field-label">Sex (for calorie math)</label>
@@ -73,6 +73,17 @@
           <button data-val="300"><strong>Steady</strong><span>≈0.3 kg/week</span></button>
         </div>
         <div class="ob-summary" id="obSummary"></div>
+      </section>
+
+      <section class="ob-step hidden" data-step="4">
+        <h2>Supplements</h2>
+        <p class="ob-sub">Optional — add anything you take daily. You can edit this later in Settings.</p>
+        <ul id="obSuppList" class="entry-list"></ul>
+        <div class="form-grid" style="margin-top:12px">
+          <label>Name <input type="text" id="obSuppName" placeholder="e.g. Vitamin D3"></label>
+          <label>Note (optional) <input type="text" id="obSuppNote" placeholder="e.g. with breakfast"></label>
+        </div>
+        <button class="btn ghost full" id="obSuppAdd">Add supplement</button>
       </section>
 
       <div class="ob-nav">
@@ -154,6 +165,11 @@
       <section id="goalCards"></section>
       <section class="card">
         <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
+        <div class="chips" id="weightRangeChips">
+          <button data-d="14">14d</button>
+          <button data-d="30" class="active">30d</button>
+          <button data-d="90">90d</button>
+        </div>
         <div id="weightChart" class="chart"></div>
         <p class="legend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
       </section>
@@ -162,7 +178,13 @@
         <div id="waistChart" class="chart"></div>
       </section>
       <section class="card">
-        <div class="card-head"><h3>Calories — last 14 days</h3></div>
+        <div class="card-head"><h3>Calories</h3></div>
+        <div class="chips" id="calRangeChips">
+          <button data-d="7">7d</button>
+          <button data-d="14" class="active">14d</button>
+          <button data-d="30">30d</button>
+          <button data-d="90">90d</button>
+        </div>
         <div id="calChart" class="chart"></div>
       </section>
       <section class="card" id="weekCard"></section>
@@ -234,6 +256,25 @@
         <button class="btn primary full" id="goalsSave">Save goals</button>
       </section>
       <section class="card">
+        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3></div>
+        <ul id="suppSettingsList" class="entry-list"></ul>
+        <div class="form-grid" style="margin-top:12px">
+          <label>Name <input type="text" id="suppName" placeholder="e.g. Vitamin D3"></label>
+          <label>Note (optional) <input type="text" id="suppNote" placeholder="e.g. with breakfast"></label>
+        </div>
+        <button class="btn primary full" id="suppAddBtn">Add supplement</button>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="bell"></span>Daily reminder</h3></div>
+        <div class="switch-row">
+          <div><div class="switch-title">Remind me to log</div><div class="muted">A daily local notification if you haven't logged anything yet</div></div>
+          <label class="switch"><input type="checkbox" id="setReminder"><span class="knob"></span></label>
+        </div>
+        <label class="field-label" for="setReminderTime">Time</label>
+        <input type="time" id="setReminderTime" value="19:00">
+        <p class="muted center" id="reminderInfo" style="margin-top:10px"></p>
+      </section>
+      <section class="card">
         <div class="card-head"><h3><span class="ic t-amber" data-ic="sparkle"></span>AI photo estimates</h3></div>
         <p class="muted" style="margin-bottom:10px">Paste an Anthropic API key to estimate calories from a meal photo. Stored only on this device; each photo costs a fraction of a cent.</p>
         <input type="password" id="setApiKey" placeholder="sk-ant-...">
@@ -301,7 +342,7 @@
         <button class="sheet-close" id="scanClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="scan-wrap">
-        <video id="scanVideo" playsinline muted></video>
+        <div id="scanReader"></div>
         <div class="scan-frame"></div>
       </div>
       <p class="muted center" id="scanStatus">Point the camera at a barcode</p>
@@ -380,6 +421,9 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="js/vendor/capacitor.js"></script>
+  <script src="js/vendor/capacitor-local-notifications.js"></script>
+  <script src="js/vendor/html5-qrcode.min.js"></script>
   <script src="js/foods.js"></script>
   <script src="js/app.js"></script>
 </body>
