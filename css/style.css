@@ -263,6 +263,17 @@ input::placeholder { color: var(--muted2); }
 /* ===== Settings ===== */
 .form-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
 .form-grid label { font-size: 0.8rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+
+.macro-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.macro-field { flex: 1; min-width: 0; font-size: 0.78rem; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.macro-field.wide { flex: 2.2; }
+.macro-field input { text-align: center; padding: 12px 8px; }
+.macro-field.wide input { text-align: left; }
+.macro-cal-input { display: flex; gap: 6px; }
+.macro-cal-input input { flex: 1; min-width: 0; text-align: left; }
+.unit-toggle { display: flex; flex-shrink: 0; background: var(--card2); border-radius: 10px; padding: 3px; gap: 2px; }
+.unit-toggle button { font: inherit; font-size: 0.74rem; font-weight: 700; padding: 0 10px; border: none; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.unit-toggle button.active { background: var(--card3); color: var(--text); }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0 4px; }
 .switch-title { font-size: 0.92rem; font-weight: 600; }
 .switch { position: relative; width: 48px; height: 28px; flex-shrink: 0; }

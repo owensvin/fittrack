@@ -384,29 +384,53 @@
           <button data-val="simple" class="active">Simple</button>
           <button data-val="ingredients">By ingredients</button>
         </div>
-        <div class="form-grid" id="qSimpleFields">
-          <label>Calories <input type="number" id="qKcal" inputmode="numeric" placeholder="kcal"></label>
-          <label>Protein (g) <input type="number" id="qProt" inputmode="decimal" placeholder="optional"></label>
-          <label>Carbs (g) <input type="number" id="qCarb" inputmode="decimal" placeholder="optional"></label>
-          <label>Fat (g) <input type="number" id="qFat" inputmode="decimal" placeholder="optional"></label>
+        <div id="qSimpleFields">
+          <div class="macro-row">
+            <div class="macro-field wide">
+              <label>Calories</label>
+              <div class="macro-cal-input">
+                <input type="number" id="qKcal" inputmode="decimal" placeholder="0">
+                <div class="unit-toggle"><button data-u="kcal" class="active">kcal</button><button data-u="kj">kJ</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="macro-row">
+            <div class="macro-field"><label>Protein (g)</label><input type="number" id="qProt" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label>Fat (g)</label><input type="number" id="qFat" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label>Carbs (g)</label><input type="number" id="qCarb" inputmode="decimal" placeholder="0"></div>
+          </div>
         </div>
         <div class="hidden" id="qIngredientsFields">
           <ul class="entry-list ingredient-list" id="ingredientList"></ul>
-          <label class="field-label">Basis</label>
+          <div class="form-grid">
+            <label>Ingredient name <input type="text" id="ingName" placeholder="e.g. Chicken breast"></label>
+          </div>
           <div class="chips" id="ingBasisChips">
             <button data-basis="100g" class="active">per 100g</button>
             <button data-basis="serving">per serving</button>
           </div>
-          <div class="form-grid">
-            <label>Ingredient name <input type="text" id="ingName" placeholder="e.g. Chicken breast"></label>
-            <label id="ingQtyLabel"><span id="ingQtyLabelText">Quantity (g)</span> <input type="number" id="ingQty" inputmode="decimal" placeholder="100"></label>
-            <label>Calories <input type="number" id="ingKcal" inputmode="numeric" placeholder="kcal"></label>
-            <label>Protein (g) <input type="number" id="ingProt" inputmode="decimal" placeholder="optional"></label>
-            <label>Carbs (g) <input type="number" id="ingCarb" inputmode="decimal" placeholder="optional"></label>
-            <label>Fat (g) <input type="number" id="ingFat" inputmode="decimal" placeholder="optional"></label>
+          <div class="macro-row">
+            <div class="macro-field"><label id="ingQtyLabelText">Qty (g)</label><input type="number" id="ingQty" inputmode="decimal" placeholder="100"></div>
+            <div class="macro-field wide">
+              <label>Calories</label>
+              <div class="macro-cal-input">
+                <input type="number" id="ingKcal" inputmode="decimal" placeholder="0">
+                <div class="unit-toggle"><button data-u="kcal" class="active">kcal</button><button data-u="kj">kJ</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="macro-row">
+            <div class="macro-field"><label>Protein (g)</label><input type="number" id="ingProt" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label>Fat (g)</label><input type="number" id="ingFat" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label>Carbs (g)</label><input type="number" id="ingCarb" inputmode="decimal" placeholder="0"></div>
           </div>
           <button class="btn ghost full" id="ingAddBtn">Add ingredient</button>
-          <p class="field-label" style="margin-top:16px">Meal totals</p>
+          <div class="macro-row" style="margin-top:16px">
+            <div class="macro-field"><label>Total weight (g)</label><input type="number" id="mealTotalWeight" inputmode="decimal" placeholder="e.g. 800"></div>
+            <div class="macro-field"><label>Serving size (g)</label><input type="number" id="mealServingWeight" inputmode="decimal" placeholder="e.g. 250"></div>
+          </div>
+          <p class="muted" id="ingBatchTotals" style="margin:8px 0 4px"></p>
+          <p class="field-label">Per serving</p>
           <div class="macro-preview" id="ingTotals"></div>
         </div>
         <div class="form-grid">

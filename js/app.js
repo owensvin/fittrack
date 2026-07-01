@@ -602,7 +602,7 @@ function openDetail(food, mode) {
 function detailFactor() { const q = parseFloat($("#qtyInput").value) || 0; return detail.mode === "per100" ? q / 100 : q; }
 function updateMacroPreview() {
   const f = detail.food, k = detailFactor();
-  $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div><div><span>${r1((f.f || 0) * k)}</span><label>fat</label></div>`;
+  $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div><span>${r1((f.f || 0) * k)}</span><label>fat</label></div><div><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div>`;
 }
 $("#qtyInput").addEventListener("input", updateMacroPreview);
 $("#qtyMinus").addEventListener("click", () => { const i = $("#qtyInput"), st = detail.mode === "per100" ? 10 : 0.5; i.value = Math.max(st, (parseFloat(i.value) || 0) - st); updateMacroPreview(); });
@@ -628,7 +628,9 @@ function addFoodItem(item, src) {
 /* ---------- quick add / custom ---------- */
 let quickMode = "quick";
 let editTarget = null;
-let qCustomMode = "simple", customIngredients = [], ingBasis = "100g";
+const KJ_PER_KCAL = 4.184;
+let qCustomMode = "simple", customIngredients = [], ingBasis = "100g", calUnit = "kcal";
+let totalWTouched = false, servWTouched = false;
 function openQuick(mode, prefill) {
   quickMode = mode;
   $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : "Quick add";
@@ -636,12 +638,13 @@ function openQuick(mode, prefill) {
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
   if (mode === "ai") $("#qNote").textContent = "AI's best guess — tweak anything, then add.";
-  ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing"].forEach((id) => ($("#" + id).value = ""));
+  ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
   $("#quickSave").textContent = mode === "custom" ? "Save food" : mode === "edit" ? "Save changes" : "Add";
-  customIngredients = []; ingBasis = "100g";
+  customIngredients = []; ingBasis = "100g"; totalWTouched = false; servWTouched = false;
   $$("#ingBasisChips button").forEach((b) => b.classList.toggle("active", b.dataset.basis === "100g"));
-  $("#ingQtyLabelText").textContent = "Quantity (g)"; $("#ingQty").placeholder = "100";
+  $("#ingQtyLabelText").textContent = "Qty (g)"; $("#ingQty").placeholder = "100";
+  setCalUnit("kcal");
   setQCustomMode("simple");
   renderIngredientList();
   $("#quickSheet").classList.remove("hidden");
@@ -656,15 +659,27 @@ $("#qCustomModeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   setQCustomMode(b.dataset.val);
 });
+function setCalUnit(u) {
+  calUnit = u;
+  $$(".unit-toggle button").forEach((b) => b.classList.toggle("active", b.dataset.u === u));
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".unit-toggle button");
+  if (b) setCalUnit(b.dataset.u);
+});
+function toKcal(raw) { return calUnit === "kj" ? raw / KJ_PER_KCAL : raw; }
 $("#ingBasisChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   ingBasis = b.dataset.basis;
   $$("#ingBasisChips button").forEach((x) => x.classList.toggle("active", x === b));
-  $("#ingQtyLabelText").textContent = ingBasis === "100g" ? "Quantity (g)" : "Servings";
+  $("#ingQtyLabelText").textContent = ingBasis === "100g" ? "Qty (g)" : "Servings";
   $("#ingQty").placeholder = ingBasis === "100g" ? "100" : "1";
 });
 function ingredientTotals() {
   return customIngredients.reduce((s, ing) => ({ kcal: s.kcal + ing.kcal, p: s.p + ing.p, c: s.c + ing.c, f: s.f + ing.f }), { kcal: 0, p: 0, c: 0, f: 0 });
+}
+function defaultTotalWeight() {
+  return customIngredients.filter((i) => i.basis === "100g").reduce((s, i) => s + i.qty, 0);
 }
 function renderIngredientList() {
   $("#ingredientList").innerHTML = customIngredients.length
@@ -679,13 +694,27 @@ function renderIngredientList() {
   $$("#ingredientList .fi-del").forEach((b) => b.addEventListener("click", () => {
     customIngredients.splice(+b.dataset.i, 1); renderIngredientList();
   }));
-  const t = ingredientTotals();
-  $("#ingTotals").innerHTML = `<div><span>${r0(t.kcal)}</span><label>kcal</label></div><div><span>${r1(t.p)}</span><label>protein</label></div><div><span>${r1(t.c)}</span><label>carbs</label></div><div><span>${r1(t.f)}</span><label>fat</label></div>`;
+  if (!totalWTouched) $("#mealTotalWeight").value = defaultTotalWeight() || "";
+  if (!servWTouched) $("#mealServingWeight").value = $("#mealTotalWeight").value;
+  updateMealWeightPreview();
 }
+function servingFactor() {
+  const totalW = parseFloat($("#mealTotalWeight").value) || 0;
+  const servW = parseFloat($("#mealServingWeight").value) || 0;
+  return totalW > 0 && servW > 0 ? servW / totalW : 1;
+}
+function updateMealWeightPreview() {
+  const t = ingredientTotals(), factor = servingFactor();
+  const per = { kcal: t.kcal * factor, p: t.p * factor, f: t.f * factor, c: t.c * factor };
+  $("#ingTotals").innerHTML = `<div><span>${r0(per.kcal)}</span><label>kcal</label></div><div><span>${r1(per.p)}</span><label>protein</label></div><div><span>${r1(per.f)}</span><label>fat</label></div><div><span>${r1(per.c)}</span><label>carbs</label></div>`;
+  $("#ingBatchTotals").textContent = `Whole batch: ${r0(t.kcal)} kcal · P ${r1(t.p)}g · F ${r1(t.f)}g · C ${r1(t.c)}g`;
+}
+$("#mealTotalWeight").addEventListener("input", () => { totalWTouched = true; updateMealWeightPreview(); });
+$("#mealServingWeight").addEventListener("input", () => { servWTouched = true; updateMealWeightPreview(); });
 $("#ingAddBtn").addEventListener("click", () => {
   const name = $("#ingName").value.trim();
   const qty = parseFloat($("#ingQty").value);
-  const kcal = parseFloat($("#ingKcal").value);
+  const kcal = toKcal(parseFloat($("#ingKcal").value));
   if (!name) return toast("Enter an ingredient name");
   if (!qty || qty <= 0) return toast("Enter a quantity");
   if (isNaN(kcal) || kcal < 0) return toast("Enter calories");
@@ -707,18 +736,20 @@ $("#quickSheet").addEventListener("click", (e) => { if (e.target.id === "quickSh
 $("#quickSave").addEventListener("click", () => {
   const name = $("#qName").value.trim() || (quickMode === "custom" ? "" : "Quick add");
   if (quickMode === "custom" && !name) return toast("Give it a name");
-  let food;
+  let food, servingWeight = 0;
   if (quickMode === "custom" && qCustomMode === "ingredients") {
     if (!customIngredients.length) return toast("Add at least one ingredient");
-    const t = ingredientTotals();
-    food = { name, kcal: r0(t.kcal), p: r1(t.p), c: r1(t.c), f: r1(t.f) };
+    const t = ingredientTotals(), factor = servingFactor();
+    servingWeight = parseFloat($("#mealServingWeight").value) || 0;
+    food = { name, kcal: r0(t.kcal * factor), p: r1(t.p * factor), c: r1(t.c * factor), f: r1(t.f * factor) };
   } else {
-    const kcal = parseFloat($("#qKcal").value);
+    const kcal = toKcal(parseFloat($("#qKcal").value));
     if (isNaN(kcal) || kcal < 0) return toast("Enter calories");
     food = { name, kcal, p: parseFloat($("#qProt").value) || 0, c: parseFloat($("#qCarb").value) || 0, f: parseFloat($("#qFat").value) || 0 };
   }
   if (quickMode === "custom") {
-    food.id = "c" + Date.now(); food.serving = $("#qServing").value.trim() || "1 serving";
+    food.id = "c" + Date.now();
+    food.serving = $("#qServing").value.trim() || (qCustomMode === "ingredients" && servingWeight ? `${servingWeight} g` : "1 serving");
     if (qCustomMode === "ingredients") food.ingredients = customIngredients;
     state.customFoods.unshift(food); save(); toast("Custom food saved");
     $("#quickSheet").classList.add("hidden"); renderFoodList();
@@ -809,11 +840,23 @@ async function openScanner() {
         Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
         Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
       ],
+      // Let the browser's own native decoder handle frames when it exists
+      // (faster than the JS/canvas fallback); WKWebView has none, so it
+      // still falls back to the bundled zxing decoder there.
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
       verbose: false,
     });
     await html5Qr.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 260, height: 140 } },
+      {
+        fps: 20,
+        // Barcodes are wide and short — a wide/short capture box samples
+        // more of the code per frame than a square one.
+        qrbox: { width: 300, height: 110 },
+        aspectRatio: 1.777,
+        disableFlip: true,
+        videoConstraints: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      },
       (code) => { if (!scanBusy) lookupBarcode(code); },
       () => {},
     );
