@@ -1,6 +1,6 @@
 {
   "name": "fittrack",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Personal calorie, weight and habit tracker (PWA + Capacitor iOS)",
   "scripts": {

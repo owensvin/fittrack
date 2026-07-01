@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -21,12 +21,12 @@ function fmtShort(k) { return fromKey(k).toLocaleDateString(undefined, { month: 
 function isWeekend(k) { const d = fromKey(k).getDay(); return d === 0 || d === 6; }
 
 let toastTimer = null;
-function toast(msg, badge) {
+function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
-  t.className = "toast" + (badge ? " badge-toast" : "");
+  t.className = "toast";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add("hidden"), badge ? 3200 : 2000);
+  toastTimer = setTimeout(() => t.classList.add("hidden"), 2000);
 }
 
 /* ---------- icons ---------- */
@@ -86,29 +86,10 @@ function defaultSupplements() {
     { id: "musashi", emoji: "🔥", name: "Musashi Fat Metaboliser", weekday: "30 min before walk", weekend: "with breakfast/lunch" },
     { id: "fishoil", emoji: "🐟", name: "Fish Oil 1000", note: "joint & heart" },
     { id: "vitc", emoji: "🍊", name: "Vitamin C 1000", note: "immune" },
-    { id: "mag", emoji: "💪", name: "Magnesium", note: "recovery" },
-    { id: "calcium", emoji: "🦴", name: "Calcium", note: "bones" },
-    { id: "d3", emoji: "☀️", name: "Vitamin D3", note: "bones & immune" },
+    { id: "magcalD3", emoji: "🦴", name: "Magnesium + Calcium + D3", note: "bones, recovery & immune" },
     { id: "skin", emoji: "✨", name: "Skin Revitalizer", note: "skin" },
   ];
 }
-const BADGES = [
-  { id: "first", emoji: "🌱", name: "First Step" },
-  { id: "streak3", emoji: "🔥", name: "On a Roll" },
-  { id: "streak7", emoji: "⚡", name: "Week Warrior" },
-  { id: "streak14", emoji: "💎", name: "Fortnight" },
-  { id: "streak30", emoji: "👑", name: "Unstoppable" },
-  { id: "protein", emoji: "🥩", name: "Protein Pro" },
-  { id: "rings", emoji: "🎯", name: "Ring Master" },
-  { id: "walk", emoji: "🚶", name: "First Walk" },
-  { id: "walk5", emoji: "🏅", name: "5 Walks/wk" },
-  { id: "supps", emoji: "💊", name: "Fully Stacked" },
-  { id: "water", emoji: "💧", name: "Hydrated" },
-  { id: "down1", emoji: "📉", name: "Down 1kg" },
-  { id: "sprint", emoji: "🏆", name: "Sprint Champ" },
-  { id: "goal", emoji: "🌟", name: "Goal Crusher" },
-];
-
 /* ---------- state ---------- */
 const LS_KEY = "fittrack";
 let state = loadState();
@@ -122,7 +103,6 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     fasting: { startTs: null, hours: 16 },
     supplements: defaultSupplements(),
-    badges: {},
     settings: { theme: "dark", apiKey: "" },
   };
 }
@@ -132,7 +112,6 @@ function loadState() {
     if (raw) {
       const s = Object.assign(defaultState(), JSON.parse(raw));
       if (!s.supplements || !s.supplements.length) s.supplements = defaultSupplements();
-      if (!s.badges) s.badges = {};
       return s;
     }
   } catch (e) { console.error("load failed", e); }
@@ -163,7 +142,7 @@ function bmr(sex, kg, cm, age) {
   return sex === "male" ? 10 * kg + 6.25 * cm - 5 * age + 5 : 10 * kg + 6.25 * cm - 5 * age - 161;
 }
 function currentWeight() {
-  return state.weights.length ? state.weights[state.weights.length - 1].kg : (state.profile ? state.profile.startWeightKg : 77);
+  return state.weights.length ? state.weights[state.weights.length - 1].kg : (state.profile ? state.profile.startWeightKg : 70);
 }
 function tdee() { const p = state.profile; return r0(bmr(p.sex, currentWeight(), p.heightCm, p.age) * p.activity); }
 function kcalFloor(sex) { return sex === "male" ? 1500 : 1200; }
@@ -270,7 +249,7 @@ function switchView(name) {
   window.scrollTo(0, 0);
 }
 
-/* ---------- rings ---------- */
+/* ---------- daily metrics ---------- */
 function ringMetrics(k) {
   const p = state.profile, t = dayTotals(k);
   const budget = budgetFor(k);
@@ -279,57 +258,18 @@ function ringMetrics(k) {
   const mov = p.moveTarget ? t.active / p.moveTarget : 0;
   return { t, budget, cal, pro, mov, remaining: budget - t.kcal };
 }
-function ringsClosed(k) {
-  const m = ringMetrics(k);
-  return m.pro >= 1 && m.mov >= 1 && m.cal >= 0.85 && m.cal <= 1.05 && m.t.items > 0;
-}
-function drawRings(m) {
-  const cx = 84, cy = 84;
-  const rings = [
-    { r: 70, pct: m.cal, a: "var(--ring-cal-a)", b: "var(--ring-cal-b)", id: "gcal", over: m.cal > 1.0 },
-    { r: 54, pct: m.pro, a: "var(--ring-pro-a)", b: "var(--ring-pro-b)", id: "gpro" },
-    { r: 38, pct: m.mov, a: "var(--ring-mov-a)", b: "var(--ring-mov-b)", id: "gmov" },
+function renderStats(k) {
+  const m = ringMetrics(k), p = state.profile;
+  const rows = [
+    { lab: "Calories", val: r0(m.t.kcal), tgt: r0(m.budget), pct: m.cal },
+    { lab: "Protein", val: r0(m.t.p), tgt: p.proteinTarget + "g", pct: m.pro },
+    { lab: "Active", val: r0(m.t.active), tgt: p.moveTarget, pct: m.mov },
   ];
-  let defs = "<defs>";
-  rings.forEach((rg) => {
-    defs += `<linearGradient id="${rg.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${rg.a}"/><stop offset="1" stop-color="${rg.b}"/></linearGradient>`;
-  });
-  defs += "</defs>";
-  let circles = "";
-  rings.forEach((rg) => {
-    const C = 2 * Math.PI * rg.r;
-    const pct = clamp(rg.pct, 0, 1);
-    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--ring-track)" stroke-width="13"/>`;
-    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="url(#${rg.id})" stroke-width="13" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>`;
-  });
-  $("#ringsWrap").innerHTML =
-    `<svg viewBox="0 0 168 168">${defs}${circles}</svg>
-     <div class="rings-center">
-       <span class="big ${m.remaining < 0 ? "over" : ""}">${r0(Math.abs(m.remaining))}</span>
-       <label>${m.remaining < 0 ? "OVER" : "kcal left"}</label>
-     </div>`;
-}
-
-/* ---------- buddy ---------- */
-function buddyState(k) {
-  const m = ringMetrics(k);
-  const hour = new Date().getHours();
-  const isToday = k === todayKey();
-  const supDone = state.supplements.length && state.supplements.every((s) => dayLog(k).supps[s.id]);
-  if (m.remaining < -150) return { face: "😟", line: "Over budget — make tomorrow count, or fit in a walk." };
-  if (state.fasting.startTs && isToday) return { face: "😴", line: "Fasting in progress. Water helps the cravings." };
-  if (ringsClosed(k)) return { face: "🤩", line: "All three rings closed — you crushed today!" };
-  if (isToday && hour >= 19 && m.remaining > 150) return { face: "🌙", line: "Late hunger? Sparkling water or a high-protein snack beats grazing." };
-  if (isToday && hour < 11 && !supDone) return { face: "🌅", line: "Morning! Don't forget your supplements before your walk." };
-  if (m.t.items === 0) return { face: "🙂", line: "Tap a quick-log chip or + to start your day." };
-  if (m.pro >= 1) return { face: "💪", line: "Protein crushed. Keep that metabolism humming!" };
-  if (m.cal <= 1.0) return { face: "😄", line: "Right on track — nice and steady." };
-  return { face: "🍃", line: "Logging keeps you honest. You've got this." };
-}
-function renderBuddy(k) {
-  const b = buddyState(k);
-  $("#buddyFace").textContent = b.face;
-  $("#buddyBubble").textContent = b.line;
+  $("#statsRow").innerHTML = rows.map((r) =>
+    `<div class="stat-item">
+      <div class="stat-top"><span class="stat-lab">${r.lab}</span><span class="stat-num">${r.val} <span class="stat-tgt">/ ${r.tgt}</span></span></div>
+      <div class="bar slim"><div class="bar-fill" style="width:${clamp(r.pct, 0, 1) * 100}%"></div></div>
+    </div>`).join("");
 }
 
 /* ---------- streak ---------- */
@@ -346,63 +286,6 @@ function walksThisWeek() {
   return n;
 }
 
-/* ---------- badges ---------- */
-function award(id) {
-  if (state.badges[id]) return false;
-  state.badges[id] = todayKey();
-  const b = BADGES.find((x) => x.id === id);
-  if (b) { toast(`${b.emoji}  Badge unlocked: ${b.name}!`, true); confetti(); }
-  return true;
-}
-function checkBadges() {
-  const k = todayKey(), t = dayTotals(k), p = state.profile;
-  if (t.items > 0) award("first");
-  const s = streak();
-  if (s >= 3) award("streak3");
-  if (s >= 7) award("streak7");
-  if (s >= 14) award("streak14");
-  if (s >= 30) award("streak30");
-  if (t.p >= p.proteinTarget) award("protein");
-  if ((dayLog(k).waterMl || 0) >= p.waterTargetMl) award("water");
-  if ((dayLog(k).walks || []).length) award("walk");
-  if (walksThisWeek() >= 5) award("walk5");
-  if (state.supplements.length && state.supplements.every((x) => dayLog(k).supps[x.id])) award("supps");
-  if (ringsClosed(k)) award("rings");
-  const cw = currentWeight();
-  if (cw <= p.startWeightKg - 1) award("down1");
-  if (cw <= p.sprintGoalKg) award("sprint");
-  if (cw <= p.longGoalKg) award("goal");
-  save();
-}
-
-/* ---------- confetti ---------- */
-function confetti() {
-  const cv = $("#fx"), ctx = cv.getContext("2d");
-  cv.width = innerWidth; cv.height = innerHeight;
-  const colors = ["#2ee6a6", "#38bdf8", "#ff4d8d", "#ffb020", "#a78bfa"];
-  const parts = Array.from({ length: 90 }, () => ({
-    x: innerWidth / 2 + (Math.random() - 0.5) * 80,
-    y: innerHeight / 3,
-    vx: (Math.random() - 0.5) * 11,
-    vy: Math.random() * -13 - 4,
-    s: Math.random() * 7 + 4,
-    c: colors[(Math.random() * colors.length) | 0],
-    rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4,
-  }));
-  let frame = 0;
-  (function anim() {
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    parts.forEach((p) => {
-      p.vy += 0.45; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-      ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
-      ctx.restore();
-    });
-    if (++frame < 110) requestAnimationFrame(anim);
-    else ctx.clearRect(0, 0, cv.width, cv.height);
-  })();
-}
-
 /* ---------- Today ---------- */
 function defaultMealForNow() {
   const h = new Date().getHours();
@@ -417,23 +300,10 @@ function renderToday() {
   $("#daySub").textContent = fromKey(k).toLocaleDateString(undefined, { month: "long", day: "numeric" });
   $("#dayNext").disabled = isToday;
 
-  const m = ringMetrics(k);
-  drawRings(m);
-  renderBuddy(k);
+  renderStats(k);
 
-  const p = state.profile;
-  $("#ringLegend").innerHTML = [
-    { lab: "Calories", val: `${r0(m.t.kcal)}`, c: "var(--ring-cal-a)" },
-    { lab: "Protein", val: `${r0(m.t.p)}/${p.proteinTarget}g`, c: "var(--ring-pro-a)" },
-    { lab: "Active", val: `${r0(m.t.active)}`, c: "var(--ring-mov-a)" },
-  ].map((x) => `<div class="rl-item"><span class="rl-dot" style="background:${x.c}"></span><span class="rl-val">${x.val}</span><span class="rl-lab">${x.lab}</span></div>`).join("");
-
-  // streak
   const s = streak();
-  $("#streakStrip").innerHTML =
-    `<span class="streak-flame">${s > 0 ? "🔥" : "✨"}</span>
-     <div><div class="streak-num">${s} day${s === 1 ? "" : "s"}</div><div class="streak-txt">${s > 0 ? "on-target streak" : "log today to start a streak"}</div></div>
-     <div class="streak-spark">${Object.keys(state.badges).length} 🏅<br>badges</div>`;
+  $("#streakLine").textContent = s > 0 ? `${s}-day on-target streak` : "Log today to start a streak";
 
   renderQuickRow();
   renderMeals(k);
@@ -528,12 +398,12 @@ function renderSupps(k) {
   $$("#suppList li").forEach((li) => li.addEventListener("click", () => {
     const id = li.dataset.sid;
     log.supps[id] = !log.supps[id];
-    save(); renderSupps(viewDate); checkBadges();
+    save(); renderSupps(viewDate);
   }));
 }
 
 /* water / day nav */
-$("#waterPlus").addEventListener("click", () => { const l = dayLog(viewDate); l.waterMl = (l.waterMl || 0) + 250; save(); renderToday(); checkBadges(); });
+$("#waterPlus").addEventListener("click", () => { const l = dayLog(viewDate); l.waterMl = (l.waterMl || 0) + 250; save(); renderToday(); });
 $("#waterMinus").addEventListener("click", () => { const l = dayLog(viewDate); l.waterMl = Math.max(0, (l.waterMl || 0) - 250); save(); renderToday(); });
 $("#dayPrev").addEventListener("click", () => { viewDate = addDays(viewDate, -1); renderToday(); });
 $("#dayNext").addEventListener("click", () => { if (viewDate < todayKey()) { viewDate = addDays(viewDate, 1); renderToday(); } });
@@ -564,7 +434,7 @@ $("#fastBtn").addEventListener("click", () => {
   const f = state.fasting;
   if (!f.startTs) { f.startTs = Date.now(); toast("Fast started — stay strong 💪"); }
   else { f.lastHours = (Date.now() - f.startTs) / 3600000; f.startTs = null; toast(`Fast ended: ${r1(f.lastHours)} h`); }
-  save(); renderFasting(); renderBuddy(viewDate);
+  save(); renderFasting();
 });
 
 /* ---------- exercise picker ---------- */
@@ -605,7 +475,7 @@ $("#exAdd").addEventListener("click", () => {
   dayLog(viewDate).walks.push({ name: exSel.name, emoji: exSel.emoji, mins, kcal: exKcal(mins) });
   save();
   $("#exDetailSheet").classList.add("hidden"); $("#exerciseSheet").classList.add("hidden");
-  renderToday(); checkBadges(); toast(`Logged ${exSel.name} 🔥`);
+  renderToday(); toast(`Logged ${exSel.name}`);
 });
 
 /* ---------- food sheet ---------- */
@@ -716,13 +586,12 @@ $("#detailAdd").addEventListener("click", () => {
 });
 
 function addFoodItem(item, src) {
-  const wasClosed = ringsClosed(viewDate);
   dayLog(viewDate).meals[sheetMeal].push(item);
   if (src) {
     state.recents = [{ id: src.id || null, name: src.name, serving: src.serving || (detail && detail.mode === "per100" ? "100 g" : ""), kcal: src.kcal, p: src.p || 0, c: src.c || 0, f: src.f || 0 }, ...state.recents.filter((r) => r.name !== src.name)].slice(0, 25);
   }
-  save(); renderToday(); checkBadges();
-  if (!wasClosed && ringsClosed(viewDate)) { /* badge handles confetti */ } else toast(`Added ${r0(item.kcal)} kcal`);
+  save(); renderToday();
+  toast(`Added ${r0(item.kcal)} kcal`);
 }
 
 /* ---------- quick add / custom ---------- */
@@ -858,7 +727,7 @@ async function lookupBarcode(code) {
 function rescan() { if (!$("#scanSheet").classList.contains("hidden")) openScanner(); }
 
 /* ---------- Progress ---------- */
-function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); renderBadgeGrid(); }
+function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); }
 
 function goalCard(title, emoji, tgt, date) {
   const p = state.profile, start = p.startWeightKg, cw = currentWeight();
@@ -954,12 +823,6 @@ function renderWeekCard() {
       <div class="stat-box"><div class="v">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + " kg" : "—"}</div><div class="k">actual 7-day trend</div></div>
     </div>`;
 }
-function renderBadgeGrid() {
-  const earned = Object.keys(state.badges).length;
-  $("#badgeCount").textContent = `${earned} / ${BADGES.length}`;
-  $("#badgeGrid").innerHTML = BADGES.map((b) => `<div class="badge ${state.badges[b.id] ? "earned" : ""}"><div class="badge-ic">${b.emoji}</div><div class="badge-name">${b.name}</div></div>`).join("");
-}
-
 /* ---------- Body ---------- */
 function renderBody() {
   $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) => `<li><span>${w.kg} kg</span><span class="d">${fmtShort(w.d)}</span></li>`).join("");
@@ -972,7 +835,7 @@ $("#weightSave").addEventListener("click", () => {
   const k = todayKey();
   state.weights = state.weights.filter((w) => w.d !== k); state.weights.push({ d: k, kg: v });
   state.weights.sort((a, b) => (a.d < b.d ? -1 : 1)); $("#weightInput").value = "";
-  save(); renderBody(); checkBadges(); toast("Weight logged ⚖️");
+  save(); renderBody(); toast("Weight logged");
 });
 $("#waistSave").addEventListener("click", () => {
   const v = parseFloat($("#waistInput").value);

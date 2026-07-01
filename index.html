@@ -17,8 +17,6 @@
 </head>
 <body>
 
-  <canvas id="fx" class="fx"></canvas>
-
   <!-- ===== Onboarding ===== -->
   <div id="onboarding" class="onboarding hidden">
     <div class="ob-inner">
@@ -98,19 +96,9 @@
         <button class="day-nav" id="dayNext"><span class="ic" data-ic="chevR"></span></button>
       </header>
 
-      <!-- Hero: rings + buddy -->
-      <section class="hero">
-        <div class="rings-wrap" id="ringsWrap"></div>
-        <div class="buddy">
-          <div class="buddy-face" id="buddyFace">🙂</div>
-          <div class="buddy-bubble" id="buddyBubble">Let's get logging!</div>
-        </div>
-      </section>
-
-      <div class="ring-legend" id="ringLegend"></div>
-
-      <!-- Streak strip -->
-      <div class="streak-strip" id="streakStrip"></div>
+      <!-- Stats -->
+      <section class="stats-row" id="statsRow"></section>
+      <p class="streak-line" id="streakLine"></p>
 
       <!-- One-tap quick log -->
       <section class="card quick-card" id="quickCard">
@@ -178,10 +166,6 @@
         <div id="calChart" class="chart"></div>
       </section>
       <section class="card" id="weekCard"></section>
-      <section class="card">
-        <div class="card-head"><h3><span class="ic t-amber" data-ic="trophy"></span>Badges</h3><span class="muted" id="badgeCount"></span></div>
-        <div id="badgeGrid" class="badge-grid"></div>
-      </section>
       <div class="bottom-space"></div>
     </main>
 
