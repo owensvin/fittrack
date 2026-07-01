@@ -107,9 +107,12 @@
         <button class="day-nav" id="dayNext"><span class="ic" data-ic="chevR"></span></button>
       </header>
 
-      <!-- Stats -->
-      <section class="stats-row" id="statsRow"></section>
-      <p class="streak-line" id="streakLine"></p>
+      <!-- Rings -->
+      <section class="hero">
+        <div class="rings-wrap" id="ringsWrap"></div>
+      </section>
+      <div class="ring-legend" id="ringLegend"></div>
+      <p class="streak-line"><span id="streakLine"></span><button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></p>
 
       <!-- One-tap quick log -->
       <section class="card quick-card" id="quickCard">
@@ -131,7 +134,7 @@
       </section>
 
       <!-- Water -->
-      <section class="card">
+      <section class="card hidden" id="waterCard">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="drop"></span>Water</h3><span id="waterText" class="muted"></span></div>
         <div class="water-row">
           <button class="round-btn" id="waterMinus">−</button>
@@ -146,13 +149,11 @@
         <ul id="suppList" class="habit-list"></ul>
       </section>
 
-      <!-- Fasting -->
+      <!-- Since last meal -->
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Fasting 16:8</h3><span id="fastStatus" class="muted"></span></div>
-        <div class="bar slim"><div id="fastBar" class="bar-fill fast"></div></div>
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3></div>
         <div class="fast-row">
-          <span id="fastTimer" class="fast-timer">Not fasting</span>
-          <button id="fastBtn" class="btn small">Start fast</button>
+          <span id="fastTimer" class="fast-timer">No meals logged yet</span>
         </div>
       </section>
 
@@ -161,10 +162,13 @@
 
     <!-- PROGRESS -->
     <main id="view-progress" class="view hidden">
-      <header class="page-header"><h1>Progress</h1></header>
+      <section class="card" id="weekCard"></section>
       <section id="goalCards"></section>
       <section class="card">
-        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
+        <div class="card-head"><h3>Weight</h3>
+          <span class="muted" id="weightDelta"></span>
+          <button class="add-btn" id="weightExpandBtn"><span class="ic" data-ic="expand"></span></button>
+        </div>
         <div class="chips" id="weightRangeChips">
           <button data-d="14">14d</button>
           <button data-d="30" class="active">30d</button>
@@ -187,13 +191,11 @@
         </div>
         <div id="calChart" class="chart"></div>
       </section>
-      <section class="card" id="weekCard"></section>
       <div class="bottom-space"></div>
     </main>
 
     <!-- BODY -->
     <main id="view-body" class="view hidden">
-      <header class="page-header"><h1>Body</h1></header>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="scale"></span>Weight</h3></div>
         <div class="entry-row">
@@ -221,10 +223,10 @@
 
     <!-- SETTINGS -->
     <main id="view-settings" class="view hidden">
-      <header class="page-header"><h1>Settings</h1></header>
       <section class="card">
         <div class="card-head"><h3>Targets</h3></div>
-        <label class="field-label">Pace</label>
+        <p class="muted" style="margin-bottom:10px">How fast you want to lose weight, and what that means for your daily numbers.</p>
+        <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
         <div class="option-list" id="paceTiers"></div>
         <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
         <div class="form-grid">
@@ -245,18 +247,23 @@
           <div><div class="switch-title">Add exercise calories to budget</div><div class="muted">Off is better for steady fat loss</div></div>
           <label class="switch"><input type="checkbox" id="setEatBack"><span class="knob"></span></label>
         </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Track water</div><div class="muted">Shows the water card on Today</div></div>
+          <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
+        </div>
         <button class="btn primary full" id="settingsSave">Save</button>
         <p class="muted center" id="settingsInfo"></p>
       </section>
       <section class="card">
         <div class="card-head"><h3>Goals</h3></div>
-        <div class="form-grid">
-          <label>Sprint target (kg) <input type="number" id="setSprintW" step="0.1" inputmode="decimal"></label>
-          <label>Sprint by <input type="date" id="setSprintD"></label>
-          <label>Long-term target (kg) <input type="number" id="setLongW" step="0.1" inputmode="decimal"></label>
-          <label>Long-term by <input type="date" id="setLongD"></label>
+        <p class="muted" style="margin-bottom:10px">Any number of weight goals, each with its own label and date.</p>
+        <ul id="goalSettingsList" class="entry-list"></ul>
+        <div class="form-grid" style="margin-top:12px">
+          <label>Label <input type="text" id="goalLabel" placeholder="e.g. Summer trip"></label>
+          <label>Target weight (kg) <input type="number" id="goalTargetKg" step="0.1" inputmode="decimal"></label>
+          <label>By <input type="date" id="goalDate"></label>
         </div>
-        <button class="btn primary full" id="goalsSave">Save goals</button>
+        <button class="btn primary full" id="goalAddBtn">Add goal</button>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3></div>
@@ -289,6 +296,15 @@
           <button data-val="dark" class="active">Dark</button>
           <button data-val="light">Light</button>
         </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Reduce motion</div><div class="muted">Turns off sliding/fade animations</div></div>
+          <label class="switch"><input type="checkbox" id="setReduceMotion"><span class="knob"></span></label>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="info"></span>Glossary</h3></div>
+        <p class="muted" style="margin-bottom:10px">Not sure what a term means? Tap it.</p>
+        <ul class="entry-list" id="glossaryList"></ul>
       </section>
       <section class="card">
         <div class="card-head"><h3>Data</h3></div>
@@ -337,6 +353,35 @@
     </div>
   </div>
 
+  <!-- ===== Info popup ===== -->
+  <div id="infoPopup" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="infoPopupTitle">Info</h2>
+        <button class="sheet-close" id="infoPopupClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <p class="muted" id="infoPopupBody"></p>
+    </div>
+  </div>
+
+  <!-- ===== Full-screen weight history ===== -->
+  <div id="weightFullSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Weight history</h2>
+        <button class="sheet-close" id="weightFullClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="chips" id="weightFullRangeChips">
+        <button data-d="30">30d</button>
+        <button data-d="90">90d</button>
+        <button data-d="180">180d</button>
+        <button data-d="365" class="active">365d</button>
+      </div>
+      <div id="weightFullChart" class="chart"></div>
+      <p class="legend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
+    </div>
+  </div>
+
   <!-- ===== Barcode scanner ===== -->
   <div id="scanSheet" class="sheet hidden">
     <div class="sheet-panel">
@@ -367,6 +412,9 @@
         <button class="qty-btn" id="qtyPlus">+</button>
       </div>
       <div class="macro-preview" id="macroPreview"></div>
+      <div class="macro-row">
+        <div class="macro-field"><label>Time</label><input type="time" id="detailTime"></div>
+      </div>
       <button class="btn primary full" id="detailAdd">Add</button>
     </div>
   </div>
@@ -382,6 +430,9 @@
         <p class="muted hidden" id="qNote" style="margin-bottom:10px"></p>
         <div class="form-grid">
           <label>Name <input type="text" id="qName" placeholder="e.g. Lunch out"></label>
+        </div>
+        <div class="macro-row" id="qTimeWrap">
+          <div class="macro-field"><label>Time</label><input type="time" id="qTime"></div>
         </div>
         <div class="segmented hidden" id="qCustomModeSeg" style="margin:10px 0">
           <button data-val="simple" class="active">Simple</button>
