@@ -413,6 +413,57 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .macro-preview div span { display: block; font-weight: 700; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
 .macro-preview div label { font-size: var(--fs-2xs); color: var(--muted); }
 
+/* ===== Invisible scrollbars ===== */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+#weekCard { cursor: pointer; }
+
+/* ===== Section labels (Progress) ===== */
+.section-label { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 20px 4px 8px; }
+
+/* ===== Supplements grid ===== */
+.supp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.supp-chip {
+  display: flex; align-items: center; gap: 9px; padding: 11px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--card2);
+  transition: border-color var(--t-fast), background var(--t-fast), opacity var(--t-fast);
+}
+.supp-chip:active { opacity: 0.7; }
+.supp-chip.done { border-color: var(--accent); background: var(--accent-dim); }
+.supp-chip .sc-check { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--card3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: transparent; transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast); }
+.supp-chip .sc-check .ic { width: 11px; height: 11px; }
+.supp-chip.done .sc-check { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.supp-chip .sc-main { min-width: 0; }
+.supp-chip .sc-name { font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supp-chip.done .sc-name { color: var(--muted); }
+.supp-chip .sc-sub { font-size: var(--fs-2xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supp-empty { grid-column: 1 / -1; color: var(--muted); font-size: var(--fs-sm); }
+
+/* ===== Workout timer overlay ===== */
+.timer-overlay {
+  position: fixed; inset: 0; z-index: 80; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center;
+  transition: background 0.4s var(--ease);
+}
+.timer-overlay.work { background: #0d2b1e; }
+.timer-overlay.warn { background: #362508; }
+.timer-overlay.done { background: #0e2233; }
+[data-theme="light"] .timer-overlay.work { background: #d9f2e5; }
+[data-theme="light"] .timer-overlay.warn { background: #fdeccc; }
+[data-theme="light"] .timer-overlay.done { background: #d8e9f7; }
+.to-mode { font-size: var(--fs-md); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; }
+.to-time { font-size: min(30vw, 9rem); font-weight: 800; line-height: 1; letter-spacing: -3px; font-variant-numeric: tabular-nums; }
+.to-sub { font-size: var(--fs-lg); font-weight: 600; color: var(--muted); }
+.to-round-btn { margin-top: 18px; padding: 18px 34px; font-size: var(--fs-lg); background: var(--card2); border-radius: var(--r-xl); }
+.to-actions { display: flex; gap: 10px; margin-top: 26px; }
+
+/* ===== About ===== */
+.about-box { display: flex; gap: 14px; align-items: flex-start; }
+.about-icon { width: 52px; height: 52px; border-radius: var(--r-md); flex-shrink: 0; }
+.about-name { font-size: var(--fs-md); font-weight: 700; margin-bottom: 4px; }
+
 /* ===== Toast ===== */
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 104px); transform: translateX(-50%);

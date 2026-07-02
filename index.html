@@ -129,7 +129,7 @@
       <!-- Activity / Walk -->
       <section class="card">
         <div class="card-head">
-          <h3><span class="ic t-green" data-ic="walk"></span>Activity</h3>
+          <h3><span class="ic t-green" data-ic="pulse"></span>Activity</h3>
           <button class="add-btn" id="exerciseAddBtn"><span class="ic" data-ic="plus"></span></button>
         </div>
         <ul class="meal-items" id="exerciseList"></ul>
@@ -149,7 +149,7 @@
       <!-- Supplements -->
       <section class="card">
         <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><span id="suppCount" class="muted"></span></div>
-        <ul id="suppList" class="habit-list"></ul>
+        <div id="suppList" class="supp-grid"></div>
       </section>
 
       <!-- Since last meal -->
@@ -167,7 +167,9 @@
     <main id="view-progress" class="view hidden">
       <header class="page-header"><h1>Progress</h1></header>
       <section class="card" id="weekCard"></section>
+      <h2 class="section-label">Goals</h2>
       <section id="goalCards"></section>
+      <h2 class="section-label">Logging history</h2>
       <section class="card">
         <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
         <div class="chips" id="weightRangeChips">
@@ -195,9 +197,60 @@
       <div class="bottom-space"></div>
     </main>
 
+    <!-- TRAINING -->
+    <main id="view-training" class="view hidden">
+      <header class="page-header"><h1>Training</h1></header>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-green" data-ic="timer"></span>Interval timer</h3></div>
+        <div class="segmented" id="timerModeSeg">
+          <button data-val="emom" class="active">EMOM</button>
+          <button data-val="amrap">AMRAP</button>
+        </div>
+        <div id="emomFields">
+          <label class="field-label">Every (seconds)</label>
+          <div class="chips" id="emomIntChips">
+            <button data-s="30">30s</button>
+            <button data-s="45">45s</button>
+            <button data-s="60" class="active">60s</button>
+            <button data-s="90">90s</button>
+            <button data-s="120">2min</button>
+          </div>
+          <label class="field-label">Rounds</label>
+          <div class="chips" id="emomRoundChips">
+            <button data-r="10" class="active">10</button>
+            <button data-r="12">12</button>
+            <button data-r="15">15</button>
+            <button data-r="20">20</button>
+            <button data-r="30">30</button>
+          </div>
+        </div>
+        <div id="amrapFields" class="hidden">
+          <label class="field-label">Duration (minutes)</label>
+          <div class="chips" id="amrapMinChips">
+            <button data-m="8">8</button>
+            <button data-m="10" class="active">10</button>
+            <button data-m="12">12</button>
+            <button data-m="15">15</button>
+            <button data-m="20">20</button>
+          </div>
+        </div>
+        <p class="muted" id="timerHint" style="margin-top:6px">EMOM: start a new set every interval — rest with whatever time is left.</p>
+        <button class="btn primary full" id="timerStart">Start</button>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-amber" data-ic="dumbbell"></span>Recent sessions</h3></div>
+        <ul class="entry-list" id="sessionList"></ul>
+      </section>
+      <div class="bottom-space"></div>
+    </main>
+
     <!-- BODY -->
     <main id="view-body" class="view hidden">
       <header class="page-header"><h1>Body</h1></header>
+      <section class="card" id="bodySummaryCard">
+        <div class="card-head"><h3>At a glance</h3></div>
+        <div class="stat-grid" id="bodySummary"></div>
+      </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="scale"></span>Weight</h3></div>
         <div class="entry-row">
@@ -310,6 +363,17 @@
         <ul class="entry-list" id="glossaryList"></ul>
       </section>
       <section class="card">
+        <div class="card-head"><h3>About</h3></div>
+        <div class="about-box">
+          <img src="icons/icon-192.png" alt="" class="about-icon">
+          <div>
+            <div class="about-name">FitTrack <span id="aboutVersion" class="muted"></span></div>
+            <p class="muted">Personal calorie, weight &amp; training tracker. Your data never leaves this device.</p>
+            <p class="muted" style="margin-top:6px">Designed &amp; built by owensvin · Crafted with Claude Code</p>
+          </div>
+        </div>
+      </section>
+      <section class="card">
         <div class="card-head"><h3>Data</h3></div>
         <p class="muted" style="margin-bottom:10px">Your data lives only on this device and survives app updates.</p>
         <button class="btn ghost full" id="exportBtn">Export backup (JSON)</button>
@@ -325,6 +389,7 @@
     <nav class="tabbar">
       <button class="tab active" data-view="today"><span class="ic" data-ic="home"></span>Today</button>
       <button class="tab" data-view="progress"><span class="ic" data-ic="chart"></span>Progress</button>
+      <button class="tab" data-view="training"><span class="ic" data-ic="dumbbell"></span>Training</button>
       <button class="tab" data-view="body"><span class="ic" data-ic="person"></span>Body</button>
       <button class="tab" data-view="settings"><span class="ic" data-ic="sliders"></span>Settings</button>
     </nav>
@@ -404,6 +469,10 @@
         <button class="sheet-close" id="detailClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <p class="muted" id="detailServing"></p>
+      <div class="segmented hidden" id="detailUnitSeg" style="margin-top:10px">
+        <button data-val="serv" class="active">Servings</button>
+        <button data-val="g">Grams</button>
+      </div>
       <div class="qty-row">
         <button class="qty-btn" id="qtyMinus">−</button>
         <input type="number" id="qtyInput" inputmode="decimal" value="1" step="0.5" min="0.1">
@@ -522,6 +591,43 @@
       <input type="number" id="exMins" inputmode="numeric" value="30">
       <div class="macro-preview" id="exPreview" style="margin-top:14px"></div>
       <button class="btn primary full" id="exAdd">Add</button>
+    </div>
+  </div>
+
+  <!-- ===== Full-screen workout timer ===== -->
+  <div id="timerOverlay" class="timer-overlay hidden">
+    <div class="to-mode" id="toMode">EMOM</div>
+    <div class="to-time" id="toTime">1:00</div>
+    <div class="to-sub" id="toSub"></div>
+    <button class="btn to-round-btn hidden" id="toRoundBtn">+1 round</button>
+    <div class="to-actions">
+      <button class="btn ghost" id="toPause">Pause</button>
+      <button class="btn ghost" id="toEnd">End</button>
+    </div>
+    <button class="btn primary hidden" id="toLog">Log session</button>
+  </div>
+
+  <!-- ===== Summary detail ===== -->
+  <div id="summarySheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Summary</h2>
+        <button class="sheet-close" id="summaryFullClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <div class="chips" id="sumFullChips">
+          <button data-d="7" class="active">Week</button>
+          <button data-d="30">Month</button>
+        </div>
+        <p class="field-label">Daily calories vs target</p>
+        <div id="sumCalDiff" class="chart"></div>
+        <p class="legend"><span class="lg dot-ma">under target</span><span class="lg dot-goal">over target</span></p>
+        <p class="field-label">Day-to-day weight change</p>
+        <div id="sumWeightDiff" class="chart"></div>
+        <p class="field-label">Totals</p>
+        <div class="stat-grid" id="sumFullStats"></div>
+        <div style="height:24px"></div>
+      </div>
     </div>
   </div>
 

@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.7";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -75,6 +75,7 @@ const ICONS = {
   bell: '<path d="M6 17h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4.5z"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0"/>',
   expand: '<polyline points="9 4 4 4 4 9"/><polyline points="15 4 20 4 20 9"/><polyline points="4 15 4 20 9 20"/><polyline points="20 15 20 20 15 20"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="18" x2="12" y2="21"/>',
+  pulse: '<polyline points="3 12 7.5 12 10 5.5 14 18.5 16.5 12 21 12"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor"/>',
 };
@@ -325,7 +326,7 @@ function prefersReducedMotion() {
   return !!(state.settings && state.settings.reduceMotion) || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 }
 function applyMotionPref() { document.body.classList.toggle("no-motion", prefersReducedMotion()); }
-const TAB_ORDER = ["today", "progress", "body", "settings"];
+const TAB_ORDER = ["today", "progress", "training", "body", "settings"];
 let currentView = null;
 function switchView(name) {
   if (currentView === name) { window.scrollTo(0, 0); return; }
@@ -339,6 +340,7 @@ function switchView(name) {
   }
   if (name === "today") renderToday();
   if (name === "progress") renderProgress();
+  if (name === "training") renderTraining();
   if (name === "body") renderBody();
   if (name === "settings") renderSettings();
   window.scrollTo(0, 0);
@@ -458,10 +460,10 @@ function renderQuickRow() {
   const items = [...state.recents, ...state.customFoods].slice(0, 10);
   const seen = new Set();
   const uniq = items.filter((f) => !seen.has(f.name) && seen.add(f.name));
-  let html = uniq.map((f, i) =>
+  let html = `<button class="quick-chip add" id="quickMore">+</button>`;
+  html += uniq.map((f, i) =>
     `<button class="quick-chip" data-qi="${i}"><div class="qc-name">${esc(f.name)}</div><div class="qc-kcal">${r0(f.kcal)} kcal</div></button>`).join("");
-  if (!uniq.length) html = `<div class="quick-empty">Foods you log will appear here for one-tap re-adding.</div>`;
-  html += `<button class="quick-chip add" id="quickMore">+</button>`;
+  if (!uniq.length) html += `<div class="quick-empty">Foods you log will appear here for one-tap re-adding.</div>`;
   $("#quickRow").innerHTML = html;
   $$("#quickRow .quick-chip[data-qi]").forEach((el) =>
     el.addEventListener("click", () => {
@@ -530,23 +532,23 @@ function renderSupps(k) {
   const log = dayLog(k);
   const wknd = isWeekend(k);
   if (!state.supplements.length) {
-    $("#suppList").innerHTML = `<li class="muted" style="border-top:none;cursor:default">Add supplements in Settings to track them here.</li>`;
+    $("#suppList").innerHTML = `<div class="supp-empty">Add supplements in Settings to track them here.</div>`;
     $("#suppCount").textContent = "";
     return;
   }
   $("#suppList").innerHTML = state.supplements.map((s) => {
     const done = !!log.supps[s.id];
     const sub = s.weekday ? (wknd ? s.weekend : s.weekday) : (s.note || "");
-    return `<li class="${done ? "done" : ""}" data-sid="${s.id}">
-      <span class="ic habit-ic" data-ic="pill"></span>
-      <div class="habit-main"><div class="habit-name">${esc(s.name)}</div>${sub ? `<div class="habit-sub">${esc(sub)}</div>` : ""}</div>
-      <span class="habit-check"><span class="ic" data-ic="check"></span></span></li>`;
+    return `<div class="supp-chip ${done ? "done" : ""}" data-sid="${s.id}">
+      <span class="sc-check"><span class="ic" data-ic="check"></span></span>
+      <div class="sc-main"><div class="sc-name">${esc(s.name)}</div>${sub ? `<div class="sc-sub">${esc(sub)}</div>` : ""}</div>
+    </div>`;
   }).join("");
   renderIcons($("#suppList"));
   const done = state.supplements.filter((s) => log.supps[s.id]).length;
   $("#suppCount").textContent = `${done} / ${state.supplements.length}`;
-  $$("#suppList li").forEach((li) => li.addEventListener("click", () => {
-    const id = li.dataset.sid;
+  $$("#suppList .supp-chip").forEach((chip) => chip.addEventListener("click", () => {
+    const id = chip.dataset.sid;
     log.supps[id] = !log.supps[id];
     if (log.supps[id]) haptic("light");
     save(); renderSupps(viewDate);
@@ -717,30 +719,58 @@ function renderOFFList() {
 
 /* ---------- detail / qty ---------- */
 let detail = null;
+// Pull a per-serving gram weight out of serving strings like "1 large (50 g)" or "40 g".
+function servingGrams(food) {
+  const m = /([\d.]+)\s*g\b/.exec(food.serving || "");
+  return m ? parseFloat(m[1]) : null;
+}
 function openDetail(food, mode) {
-  detail = { food, mode };
+  detail = { food, mode, unit: mode === "per100" ? "g" : "serv", grams: servingGrams(food) };
   $("#detailName").textContent = food.name;
   $("#detailServing").textContent = mode === "per100" ? `${r0(food.kcal)} kcal per 100 g${food.brand ? " · " + food.brand : ""}` : `${r0(food.kcal)} kcal per ${food.serving || "serving"}`;
-  $("#qtyInput").value = mode === "per100" ? 100 : 1;
-  $("#qtyInput").step = mode === "per100" ? 10 : 0.5;
-  $("#qtyUnit").textContent = mode === "per100" ? "g" : "× serving";
+  $("#detailUnitSeg").classList.toggle("hidden", !(mode === "serving" && detail.grams));
+  $$("#detailUnitSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === "serv"));
+  applyDetailUnit();
   $("#detailTime").value = nowTimeStr();
-  updateMacroPreview();
   $("#detailSheet").classList.remove("hidden");
 }
-function detailFactor() { const q = parseFloat($("#qtyInput").value) || 0; return detail.mode === "per100" ? q / 100 : q; }
+function applyDetailUnit() {
+  if (detail.mode === "per100") {
+    $("#qtyInput").value = 100; $("#qtyInput").step = 10; $("#qtyUnit").textContent = "g";
+  } else if (detail.unit === "g") {
+    $("#qtyInput").value = detail.grams; $("#qtyInput").step = 5; $("#qtyUnit").textContent = "g";
+  } else {
+    $("#qtyInput").value = 1; $("#qtyInput").step = 0.5; $("#qtyUnit").textContent = "× serving";
+  }
+  updateMacroPreview();
+}
+$("#detailUnitSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  detail.unit = b.dataset.val;
+  $$("#detailUnitSeg button").forEach((x) => x.classList.toggle("active", x === b));
+  applyDetailUnit();
+});
+function detailFactor() {
+  const q = parseFloat($("#qtyInput").value) || 0;
+  if (detail.mode === "per100") return q / 100;
+  if (detail.unit === "g" && detail.grams) return q / detail.grams;
+  return q;
+}
 function updateMacroPreview() {
   const f = detail.food, k = detailFactor();
   $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div><span>${r1((f.f || 0) * k)}</span><label>fat</label></div><div><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div>`;
 }
 $("#qtyInput").addEventListener("input", updateMacroPreview);
-$("#qtyMinus").addEventListener("click", () => { const i = $("#qtyInput"), st = detail.mode === "per100" ? 10 : 0.5; i.value = Math.max(st, (parseFloat(i.value) || 0) - st); updateMacroPreview(); });
-$("#qtyPlus").addEventListener("click", () => { const i = $("#qtyInput"), st = detail.mode === "per100" ? 10 : 0.5; i.value = (parseFloat(i.value) || 0) + st; updateMacroPreview(); });
+function detailStep() { return detail.mode === "per100" ? 10 : detail.unit === "g" ? 5 : 0.5; }
+$("#qtyMinus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = Math.max(st, (parseFloat(i.value) || 0) - st); updateMacroPreview(); });
+$("#qtyPlus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = (parseFloat(i.value) || 0) + st; updateMacroPreview(); });
 $("#detailClose").addEventListener("click", () => $("#detailSheet").classList.add("hidden"));
 $("#detailSheet").addEventListener("click", (e) => { if (e.target.id === "detailSheet") $("#detailSheet").classList.add("hidden"); });
 $("#detailAdd").addEventListener("click", () => {
   const f = detail.food, k = detailFactor(); if (k <= 0) return;
-  const qtyLabel = detail.mode === "per100" ? `${r0(k * 100)} g` : (k === 1 ? (f.serving || "") : `${k} × ${f.serving || "serving"}`);
+  const qtyLabel = detail.mode === "per100" ? `${r0(k * 100)} g`
+    : detail.unit === "g" ? `${r0(parseFloat($("#qtyInput").value) || 0)} g`
+    : (k === 1 ? (f.serving || "") : `${k} × ${f.serving || "serving"}`);
   const ts = timeToTs(viewDate, $("#detailTime").value);
   addFoodItem({ name: f.name, kcal: f.kcal * k, p: (f.p || 0) * k, c: (f.c || 0) * k, f: (f.f || 0) * k, qtyLabel, ts }, f);
   $("#detailSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
@@ -760,6 +790,7 @@ function addFoodItem(item, src) {
 /* ---------- quick add / custom ---------- */
 let quickMode = "quick";
 let editTarget = null;
+let aiServingG = 0;
 const KJ_PER_KCAL = 4.184;
 let qCustomMode = "simple", customIngredients = [], ingBasis = "100g", calUnit = "kcal";
 let totalWTouched = false, servWTouched = false;
@@ -771,7 +802,8 @@ function openQuick(mode, prefill) {
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
   $("#qTimeWrap").classList.toggle("hidden", mode === "custom");
   $("#qTime").value = (prefill && prefill.ts) ? tsToTimeStr(prefill.ts) : nowTimeStr();
-  if (mode === "ai") $("#qNote").textContent = "AI's best guess — tweak anything, then add.";
+  aiServingG = (mode === "ai" && prefill && prefill.serving_g) ? prefill.serving_g : 0;
+  if (mode === "ai") $("#qNote").textContent = (aiServingG ? `≈ ${aiServingG} g portion. ` : "") + "AI's best guess — tweak anything, then add.";
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
   $("#quickSave").textContent = mode === "custom" ? "Save food" : mode === "edit" ? "Save changes" : "Add";
@@ -904,7 +936,7 @@ $("#quickSave").addEventListener("click", () => {
     save(); renderToday(); $("#quickSheet").classList.add("hidden"); toast("Updated");
   } else {
     const ts = timeToTs(viewDate, $("#qTime").value);
-    addFoodItem({ ...food, qtyLabel: "", ts }, null);
+    addFoodItem({ ...food, qtyLabel: quickMode === "ai" && aiServingG ? `${aiServingG} g` : "", ts }, null);
     $("#quickSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
   }
 });
@@ -977,8 +1009,8 @@ async function aiEstimateCall(content) {
       messages: [{ role: "user", content }],
       output_config: { format: { type: "json_schema", schema: {
         type: "object", additionalProperties: false,
-        properties: { name: { type: "string" }, kcal: { type: "integer" }, protein_g: { type: "integer" }, carbs_g: { type: "integer" }, fat_g: { type: "integer" } },
-        required: ["name", "kcal", "protein_g", "carbs_g", "fat_g"],
+        properties: { name: { type: "string" }, kcal: { type: "integer" }, protein_g: { type: "integer" }, carbs_g: { type: "integer" }, fat_g: { type: "integer" }, serving_g: { type: "integer" } },
+        required: ["name", "kcal", "protein_g", "carbs_g", "fat_g", "serving_g"],
       } } },
     }),
   });
@@ -986,12 +1018,12 @@ async function aiEstimateCall(content) {
   const data = await res.json();
   const txt = (data.content || []).find((b) => b.type === "text")?.text || "{}";
   const j = JSON.parse(txt);
-  return { name: j.name, kcal: j.kcal, p: j.protein_g, c: j.carbs_g, f: j.fat_g };
+  return { name: j.name, kcal: j.kcal, p: j.protein_g, c: j.carbs_g, f: j.fat_g, serving_g: j.serving_g };
 }
 function aiEstimate(b64, mime) {
   return aiEstimateCall([
     { type: "image", source: { type: "base64", media_type: mime, data: b64 } },
-    { type: "text", text: "Estimate the food in this photo as a single combined meal. Give your best numeric estimate of total calories and macros for the full portion shown. Respond with JSON only." },
+    { type: "text", text: "Estimate the food in this photo as a single combined meal. Give your best numeric estimate of total calories, macros, and total weight in grams (serving_g) for the full portion shown. Respond with JSON only." },
   ]);
 }
 function aiEstimateText(desc) {
@@ -1005,7 +1037,7 @@ function aiEstimateText(desc) {
 // plugin; falls back to the Anthropic key if the device can't run it.
 const FoundationLLM = (window.Capacitor && window.Capacitor.registerPlugin)
   ? window.Capacitor.registerPlugin("FoundationLLM") : null;
-const DESCRIBE_PROMPT = 'Estimate the calories and macros for the meal described below. Treat it as one combined meal, use a short title-cased name, and give your best numeric estimate for the full portion described. Respond with ONLY a JSON object, no other text, exactly in this shape: {"name": string, "kcal": integer, "protein_g": integer, "carbs_g": integer, "fat_g": integer}\n\nMeal: ';
+const DESCRIBE_PROMPT = 'Estimate the calories and macros for the meal described below. Treat it as one combined meal, use a short title-cased name, and give your best numeric estimate for the full portion described, including its total weight in grams. Respond with ONLY a JSON object, no other text, exactly in this shape: {"name": string, "kcal": integer, "protein_g": integer, "carbs_g": integer, "fat_g": integer, "serving_g": integer}\n\nMeal: ';
 async function estimateDescription(desc) {
   if (isNativeApp() && FoundationLLM) {
     try {
@@ -1015,7 +1047,7 @@ async function estimateDescription(desc) {
         const m = (r.text || "").match(/\{[\s\S]*?\}/);
         if (m) {
           const j = JSON.parse(m[0]);
-          if (j.name && isFinite(+j.kcal)) return { name: j.name, kcal: +j.kcal, p: +j.protein_g || 0, c: +j.carbs_g || 0, f: +j.fat_g || 0 };
+          if (j.name && isFinite(+j.kcal)) return { name: j.name, kcal: +j.kcal, p: +j.protein_g || 0, c: +j.carbs_g || 0, f: +j.fat_g || 0, serving_g: +j.serving_g || 0 };
         }
         throw new Error("couldn't parse on-device response");
       }
@@ -1117,6 +1149,153 @@ function resumeScan(instance) {
   scanBusy = false;
   try { instance.resume(); } catch (_) {}
   $("#scanStatus").textContent = "Point the camera at a barcode";
+}
+
+/* ---------- Training: EMOM / AMRAP timer ---------- */
+let timerMode = "emom", emomInt = 60, emomRounds = 10, amrapMins = 10;
+let tmr = null, tmrInt = null, audioCtx = null;
+
+function beep(freq, dur, vol) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "sine"; o.frequency.value = freq || 880;
+    g.gain.value = vol || 0.35;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (dur || 0.12));
+    o.stop(audioCtx.currentTime + (dur || 0.12));
+  } catch (_) {}
+}
+function fmtClock(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : String(s);
+}
+function chipPick(sel, attr, cb) {
+  $(sel).addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    $$(sel + " button").forEach((x) => x.classList.toggle("active", x === b));
+    cb(+b.dataset[attr]);
+  });
+}
+chipPick("#emomIntChips", "s", (v) => (emomInt = v));
+chipPick("#emomRoundChips", "r", (v) => (emomRounds = v));
+chipPick("#amrapMinChips", "m", (v) => (amrapMins = v));
+$("#timerModeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  timerMode = b.dataset.val;
+  $$("#timerModeSeg button").forEach((x) => x.classList.toggle("active", x === b));
+  $("#emomFields").classList.toggle("hidden", timerMode !== "emom");
+  $("#amrapFields").classList.toggle("hidden", timerMode !== "amrap");
+  $("#timerHint").textContent = timerMode === "emom"
+    ? "EMOM: start a new set every interval — rest with whatever time is left."
+    : "AMRAP: as many rounds as possible before time runs out. Tap +1 each time you finish a round.";
+});
+
+function timerElapsed() {
+  return ((tmr.pausedAt || Date.now()) - tmr.startTs - tmr.pausedTotal) / 1000;
+}
+$("#timerStart").addEventListener("click", () => {
+  const total = timerMode === "emom" ? emomInt * emomRounds : amrapMins * 60;
+  tmr = { mode: timerMode, interval: emomInt, rounds: emomRounds, total, startTs: Date.now(), pausedAt: null, pausedTotal: 0, amrapCount: 0, lastRound: 1, lastBeep: null, finished: false };
+  $("#toRoundBtn").classList.toggle("hidden", timerMode !== "amrap");
+  $("#toRoundBtn").textContent = "+1 round (0)";
+  $("#toLog").classList.add("hidden");
+  $("#toPause").textContent = "Pause";
+  $("#toPause").classList.remove("hidden");
+  $("#timerOverlay").classList.remove("hidden");
+  beep(980, 0.2); haptic();
+  clearInterval(tmrInt); tmrInt = setInterval(timerTick, 200); timerTick();
+});
+function timerTick() {
+  if (!tmr || tmr.finished || tmr.pausedAt) return;
+  const el = timerElapsed();
+  const overlay = $("#timerOverlay");
+  if (el >= tmr.total) return finishTimer();
+  let remaining, sub;
+  if (tmr.mode === "emom") {
+    const round = Math.min(Math.floor(el / tmr.interval) + 1, tmr.rounds);
+    remaining = tmr.interval - (el % tmr.interval);
+    if (round !== tmr.lastRound) { tmr.lastRound = round; beep(1180, 0.25); haptic(); }
+    $("#toMode").textContent = `EMOM · ${tmr.interval}s`;
+    sub = `Round ${round} of ${tmr.rounds}`;
+  } else {
+    remaining = tmr.total - el;
+    $("#toMode").textContent = `AMRAP · ${tmr.total / 60} min`;
+    sub = `${tmr.amrapCount} round${tmr.amrapCount === 1 ? "" : "s"} done`;
+  }
+  const rc = Math.ceil(remaining);
+  if (rc <= 3 && rc >= 1 && tmr.lastBeep !== rc + ":" + tmr.lastRound) { tmr.lastBeep = rc + ":" + tmr.lastRound; beep(760, 0.1); }
+  $("#toTime").textContent = fmtClock(remaining);
+  $("#toSub").textContent = sub;
+  overlay.classList.toggle("warn", remaining <= 5 && remaining > 0);
+  overlay.classList.toggle("work", remaining > 5);
+  overlay.classList.remove("done");
+}
+function finishTimer() {
+  tmr.finished = true;
+  clearInterval(tmrInt);
+  const o = $("#timerOverlay");
+  o.classList.remove("work", "warn"); o.classList.add("done");
+  $("#toTime").textContent = "Done";
+  $("#toSub").textContent = tmr.mode === "emom"
+    ? `${tmr.rounds} rounds · ${r0(tmr.total / 60)} min`
+    : `${tmr.amrapCount} rounds in ${tmr.total / 60} min`;
+  $("#toPause").classList.add("hidden");
+  $("#toRoundBtn").classList.add("hidden");
+  $("#toLog").classList.remove("hidden");
+  beep(980, 0.3); setTimeout(() => beep(1180, 0.4), 250); haptic();
+}
+$("#toRoundBtn").addEventListener("click", () => {
+  if (!tmr || tmr.finished) return;
+  tmr.amrapCount++;
+  $("#toRoundBtn").textContent = `+1 round (${tmr.amrapCount})`;
+  haptic("light"); beep(1050, 0.08, 0.2);
+});
+$("#toPause").addEventListener("click", () => {
+  if (!tmr || tmr.finished) return;
+  if (tmr.pausedAt) {
+    tmr.pausedTotal += Date.now() - tmr.pausedAt; tmr.pausedAt = null;
+    $("#toPause").textContent = "Pause";
+  } else {
+    tmr.pausedAt = Date.now();
+    $("#toPause").textContent = "Resume";
+  }
+});
+$("#toEnd").addEventListener("click", () => {
+  if (tmr && !tmr.finished && timerElapsed() > 30) return finishTimer();
+  closeTimer();
+});
+$("#toLog").addEventListener("click", () => {
+  const mins = r0(tmr.total / 60);
+  const kcal = 8 * currentWeight() * (tmr.total / 3600); // kettlebell circuit ≈ MET 8
+  const name = tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60}min (${tmr.amrapCount} rounds)`;
+  dayLog(todayKey()).walks.push({ name, ic: "dumbbell", mins, kcal });
+  save(); haptic();
+  closeTimer(); toast(`Logged ${name} · ${r0(kcal)} kcal`);
+  renderTraining();
+});
+function closeTimer() {
+  clearInterval(tmrInt); tmr = null;
+  const o = $("#timerOverlay");
+  o.classList.add("hidden"); o.classList.remove("work", "warn", "done");
+}
+function renderTraining() {
+  const sessions = [];
+  for (let i = 0; i < 14; i++) {
+    const dk = addDays(todayKey(), -i), l = state.logs[dk];
+    if (!l) continue;
+    for (const w of (l.walks || [])) {
+      if (/^(EMOM|AMRAP)/.test(w.name)) sessions.push({ d: dk, ...w });
+    }
+  }
+  $("#sessionList").innerHTML = sessions.length
+    ? sessions.slice(0, 8).map((s) =>
+        `<li><span class="row-label"><span class="ic" data-ic="dumbbell"></span>${esc(s.name)}</span><span class="d">${fmtShort(s.d)} · ${r0(s.kcal)} kcal</span></li>`).join("")
+    : `<li class="muted" style="border-top:none">Finished workouts you log will show up here.</li>`;
+  renderIcons($("#sessionList"));
 }
 
 /* ---------- Progress ---------- */
@@ -1273,8 +1452,86 @@ function renderWeekCard() {
   renderIcons($("#weekCard"));
   $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));
 }
+
+/* ---------- Summary detail (full screen) ---------- */
+// Bars diverging from a centered zero line: negative = green (deficit / loss),
+// positive = amber (over target / gain).
+function diffBarChart(points, unit) {
+  const W = 340, H = 150, L = 38, R = 8, T = 10, B = 20;
+  if (!points.length) return `<div class="food-empty">Nothing logged in this period yet.</div>`;
+  const maxAbs = Math.max(...points.map((p) => Math.abs(p.v)), 1e-6);
+  const midY = T + (H - T - B) / 2;
+  const scale = (H - T - B) / 2 / maxAbs;
+  const bw = (W - L - R) / points.length;
+  const gap = Math.min(4, bw * 0.2), rx = Math.min(3, bw / 4);
+  const bars = points.map((p, i) => {
+    const h = Math.abs(p.v) * scale;
+    if (h < 0.5) return "";
+    const y = p.v < 0 ? midY : midY - h;
+    const color = p.v < 0 ? "var(--accent)" : "var(--amber)";
+    return `<rect x="${(L + i * bw + gap / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${h.toFixed(1)}" rx="${rx.toFixed(1)}" fill="${color}" opacity="0.85"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <line x1="${L}" y1="${midY}" x2="${W - R}" y2="${midY}" stroke="var(--border)"/>
+    <text x="${L - 4}" y="${T + 8}" text-anchor="end" font-size="9" fill="var(--muted)">+${r1(maxAbs)}${unit}</text>
+    <text x="${L - 4}" y="${H - B}" text-anchor="end" font-size="9" fill="var(--muted)">−${r1(maxAbs)}${unit}</text>
+    ${bars}
+    <text x="${L}" y="${H - 6}" font-size="9" fill="var(--muted)">${fmtShort(points[0].d)}</text>
+    <text x="${W - R}" y="${H - 6}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtShort(points[points.length - 1].d)}</text>
+  </svg>`;
+}
+let sumFullPeriod = 7;
+function renderSummaryFull() {
+  const days = sumFullPeriod, p = state.profile;
+  const calPts = [], weightPts = [];
+  let kcalSum = 0, kcalDays = 0;
+  for (let i = days - 1; i >= 0; i--) {
+    const dk = addDays(todayKey(), -i);
+    const t = dayTotals(dk);
+    if (t.items > 0) { calPts.push({ d: dk, v: t.kcal - p.kcalTarget }); kcalSum += t.kcal; kcalDays++; }
+  }
+  const inRangeW = state.weights.filter((w) => w.d >= addDays(todayKey(), -(days - 1)));
+  for (let i = 1; i < inRangeW.length; i++) {
+    weightPts.push({ d: inRangeW[i].d, v: r1(inRangeW[i].kg - inRangeW[i - 1].kg) });
+  }
+  $("#sumCalDiff").innerHTML = diffBarChart(calPts, "");
+  $("#sumWeightDiff").innerHTML = weightPts.length
+    ? diffBarChart(weightPts, "kg")
+    : `<div class="food-empty">Log weight on consecutive days to see daily changes.</div>`;
+  const avgK = kcalDays ? r0(kcalSum / kcalDays) : 0;
+  const avgDef = kcalDays ? tdee() - avgK : 0;
+  const wLost = inRangeW.length >= 2 ? r1(inRangeW[inRangeW.length - 1].kg - inRangeW[0].kg) : null;
+  $("#sumFullStats").innerHTML = `
+    <div class="stat-box"><div class="v">${avgK || "—"}</div><div class="k">avg kcal / day</div></div>
+    <div class="stat-box"><div class="v">${kcalDays ? (avgDef >= 0 ? "−" : "+") + Math.abs(avgDef) : "—"}</div><div class="k">avg deficit</div></div>
+    <div class="stat-box"><div class="v">${kcalDays}/${days}</div><div class="k">days logged</div></div>
+    <div class="stat-box"><div class="v">${wLost != null ? (wLost <= 0 ? "" : "+") + wLost + " kg" : "—"}</div><div class="k">weight change</div></div>`;
+  $$("#sumFullChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === sumFullPeriod));
+}
+$("#weekCard").addEventListener("click", (e) => {
+  if (e.target.closest("#summaryChips") || e.target.closest(".info-btn")) return;
+  sumFullPeriod = summaryPeriod;
+  renderSummaryFull();
+  $("#summarySheet").classList.remove("hidden");
+});
+$("#summaryFullClose").addEventListener("click", () => $("#summarySheet").classList.add("hidden"));
+$("#summarySheet").addEventListener("click", (e) => { if (e.target.id === "summarySheet") $("#summarySheet").classList.add("hidden"); });
+$("#sumFullChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  sumFullPeriod = +b.dataset.d; renderSummaryFull();
+});
 /* ---------- Body ---------- */
 function renderBody() {
+  const p = state.profile, w = state.weights, ws = state.waists;
+  const cw = w.length ? w[w.length - 1].kg : null;
+  const wDelta = cw != null ? r1(cw - p.startWeightKg) : null;
+  const cwaist = ws.length ? ws[ws.length - 1].cm : null;
+  const waistDelta = ws.length >= 2 ? r1(cwaist - ws[0].cm) : null;
+  $("#bodySummary").innerHTML = `
+    <div class="stat-box"><div class="v">${cw != null ? cw + " kg" : "—"}</div><div class="k">current weight</div></div>
+    <div class="stat-box"><div class="v">${wDelta != null ? (wDelta <= 0 ? "" : "+") + wDelta + " kg" : "—"}</div><div class="k">since start (${r1(p.startWeightKg)} kg)</div></div>
+    <div class="stat-box"><div class="v">${cwaist != null ? cwaist + " cm" : "—"}</div><div class="k">current waist</div></div>
+    <div class="stat-box"><div class="v">${waistDelta != null ? (waistDelta <= 0 ? "" : "+") + waistDelta + " cm" : "—"}</div><div class="k">waist change</div></div>`;
   $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) => `<li><span>${w.kg} kg</span><span class="d">${fmtShort(w.d)}</span></li>`).join("");
   $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) => `<li><span>${w.cm} cm</span><span class="d">${fmtShort(w.d)}</span></li>`).join("");
   renderPhotos();
@@ -1335,6 +1592,7 @@ function renderSettings() {
   $("#settingsInfo").textContent = `BMR ≈ ${r0(bmr(p.sex, currentWeight(), p.heightCm, p.age))} · maintenance ≈ ${tdee()} kcal`;
   $$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === state.settings.theme));
   $("#versionInfo").textContent = "FitTrack v" + APP_VERSION;
+  $("#aboutVersion").textContent = "v" + APP_VERSION;
   $("#setReminder").checked = !!state.settings.reminder.enabled;
   $("#setReminderTime").value = state.settings.reminder.time || "19:00";
   $("#reminderInfo").textContent = !state.settings.reminder.enabled ? "" : isNativeApp()
