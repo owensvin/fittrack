@@ -3,8 +3,8 @@
   "appName": "FitTrack",
   "webDir": "www",
   "ios": {
-    "contentInset": "always",
-    "backgroundColor": "#0a0a12"
+    "contentInset": "never",
+    "backgroundColor": "#0b0b0d"
   },
   "server": {
     "iosScheme": "fittrack"

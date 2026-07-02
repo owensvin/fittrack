@@ -166,12 +166,12 @@ textarea { resize: none; line-height: 1.5; }
 .ob-nav .btn { flex: 1; }
 
 /* ===== Layout ===== */
-.view { max-width: 480px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 10px) 16px 0; }
+.view { max-width: 480px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 8px) 16px 0; }
 .bottom-space { height: calc(env(safe-area-inset-bottom) + 108px); }
-.page-header { padding: 8px 4px 14px; }
+.page-header { padding: 2px 4px 12px; }
 .page-header h1 { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -0.4px; }
 
-.day-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 12px; }
+.day-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 10px; }
 .day-title { text-align: center; }
 .day-title h1 { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.3px; }
 .day-sub { color: var(--muted); font-size: var(--fs-sm); }

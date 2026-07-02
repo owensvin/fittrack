@@ -25,10 +25,20 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Foundation Models (on-device AI) needs the iOS 26 SDK. Pick the newest
+      # Xcode on the runner; the plugin's canImport guards keep the build green
+      # if the SDK still isn't there.
+      - name: Select newest Xcode
+        run: |
+          NEWEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $NEWEST"
+          sudo xcode-select -s "$NEWEST"
+          xcodebuild -version
 
       - name: Setup Node
         uses: actions/setup-node@v4

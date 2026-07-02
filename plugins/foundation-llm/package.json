@@ -1,0 +1,15 @@
+{
+  "name": "fittrack-foundation-llm",
+  "version": "1.0.0",
+  "description": "On-device text generation via Apple Foundation Models (iOS 26+, Apple Intelligence)",
+  "main": "dist/plugin.js",
+  "files": ["ios/", "dist/", "FittrackFoundationLlm.podspec"],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^6.0.0"
+  }
+}

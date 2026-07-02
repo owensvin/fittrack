@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.5";
+const APP_VERSION = "2.6";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -326,9 +326,11 @@ function prefersReducedMotion() {
 }
 function applyMotionPref() { document.body.classList.toggle("no-motion", prefersReducedMotion()); }
 const TAB_ORDER = ["today", "progress", "body", "settings"];
+let currentView = null;
 function switchView(name) {
-  if (!$("#view-" + name).classList.contains("hidden")) { window.scrollTo(0, 0); return; }
-  haptic("light");
+  if (currentView === name) { window.scrollTo(0, 0); return; }
+  if (currentView !== null) haptic("light");
+  currentView = name;
   $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== "view-" + name));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   if (!prefersReducedMotion()) {
@@ -999,8 +1001,33 @@ function aiEstimateText(desc) {
 }
 
 /* ---------- describe food ---------- */
+// On-device Apple Foundation Models (iOS 26+) via the local FoundationLLM
+// plugin; falls back to the Anthropic key if the device can't run it.
+const FoundationLLM = (window.Capacitor && window.Capacitor.registerPlugin)
+  ? window.Capacitor.registerPlugin("FoundationLLM") : null;
+const DESCRIBE_PROMPT = 'Estimate the calories and macros for the meal described below. Treat it as one combined meal, use a short title-cased name, and give your best numeric estimate for the full portion described. Respond with ONLY a JSON object, no other text, exactly in this shape: {"name": string, "kcal": integer, "protein_g": integer, "carbs_g": integer, "fat_g": integer}\n\nMeal: ';
+async function estimateDescription(desc) {
+  if (isNativeApp() && FoundationLLM) {
+    try {
+      const avail = await FoundationLLM.availability();
+      if (avail.status === "available") {
+        const r = await FoundationLLM.generate({ prompt: DESCRIBE_PROMPT + desc });
+        const m = (r.text || "").match(/\{[\s\S]*?\}/);
+        if (m) {
+          const j = JSON.parse(m[0]);
+          if (j.name && isFinite(+j.kcal)) return { name: j.name, kcal: +j.kcal, p: +j.protein_g || 0, c: +j.carbs_g || 0, f: +j.fat_g || 0 };
+        }
+        throw new Error("couldn't parse on-device response");
+      }
+    } catch (e) {
+      if (!state.settings.apiKey) throw e;
+      // otherwise fall through to Claude
+    }
+  }
+  if (state.settings.apiKey) return aiEstimateText(desc);
+  throw new Error("on-device AI unavailable on this device — add an API key in Settings as a fallback");
+}
 $("#describeBtn").addEventListener("click", () => {
-  if (!state.settings.apiKey) { toast("Add an Anthropic API key in Settings first"); return; }
   $("#describeText").value = "";
   $("#describeSheet").classList.remove("hidden");
   $("#describeText").focus();
@@ -1013,7 +1040,7 @@ $("#describeGo").addEventListener("click", async () => {
   const btn = $("#describeGo");
   btn.disabled = true; btn.textContent = "Estimating…";
   try {
-    const est = await aiEstimateText(desc);
+    const est = await estimateDescription(desc);
     $("#describeSheet").classList.add("hidden");
     openQuick("ai", est);
   } catch (err) { toast("AI failed: " + (err.message || "error")); }
@@ -1446,7 +1473,7 @@ $("#goalAddBtn").addEventListener("click", () => {
 });
 $("#apiKeySave").addEventListener("click", () => { state.settings.apiKey = $("#setApiKey").value.trim(); save(); toast(state.settings.apiKey ? "API key saved" : "API key cleared"); });
 $("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.settings.theme = b.dataset.val; applyTheme(); save(); renderSettings(); });
-function applyTheme() { document.documentElement.dataset.theme = state.settings.theme; const meta = $('meta[name="theme-color"]'); if (meta) meta.content = state.settings.theme === "dark" ? "#0a0a12" : "#f4f5fa"; }
+function applyTheme() { document.documentElement.dataset.theme = state.settings.theme; const meta = $('meta[name="theme-color"]'); if (meta) meta.content = state.settings.theme === "dark" ? "#0b0b0d" : "#fafafa"; }
 $("#setReduceMotion").addEventListener("change", () => {
   state.settings.reduceMotion = $("#setReduceMotion").checked;
   save(); applyMotionPref();
