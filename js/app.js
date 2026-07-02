@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.4";
+const APP_VERSION = "2.5";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -19,6 +19,15 @@ function todayKey() { return toKey(new Date()); }
 function daysBetween(k1, k2) { return Math.round((fromKey(k2) - fromKey(k1)) / 86400000); }
 function fmtShort(k) { return fromKey(k).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function isWeekend(k) { const d = fromKey(k).getDay(); return d === 0 || d === 6; }
+
+// Subtle native haptics; silently no-ops in the browser / if the plugin is missing.
+function haptic(style) {
+  try {
+    const H = window.capacitorHaptics;
+    if (!H || !isNativeApp()) return;
+    H.Haptics.impact({ style: style === "light" ? H.ImpactStyle.Light : H.ImpactStyle.Medium });
+  } catch (_) {}
+}
 
 let toastTimer = null;
 function toast(msg) {
@@ -65,6 +74,8 @@ const ICONS = {
   ellipse: '<circle cx="12" cy="12" r="9"/><path d="M4 15c3 2 13 2 16 0"/><path d="M4 9c3-2 13-2 16 0"/>',
   bell: '<path d="M6 17h12l-1.5-2.5V10a4.5 4.5 0 0 0-9 0v4.5z"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0"/>',
   expand: '<polyline points="9 4 4 4 4 9"/><polyline points="15 4 20 4 20 9"/><polyline points="4 15 4 20 9 20"/><polyline points="20 15 20 20 15 20"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="18" x2="12" y2="21"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor"/>',
 };
 function renderIcons(root = document) {
@@ -316,6 +327,8 @@ function prefersReducedMotion() {
 function applyMotionPref() { document.body.classList.toggle("no-motion", prefersReducedMotion()); }
 const TAB_ORDER = ["today", "progress", "body", "settings"];
 function switchView(name) {
+  if (!$("#view-" + name).classList.contains("hidden")) { window.scrollTo(0, 0); return; }
+  haptic("light");
   $$(".view").forEach((v) => v.classList.toggle("hidden", v.id !== "view-" + name));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   if (!prefersReducedMotion()) {
@@ -410,6 +423,11 @@ function renderToday() {
   const s = streak();
   $("#streakLine").textContent = s > 0 ? `${s}-day on-target streak` : "Log today to start a streak";
 
+  const prev = state.logs[addDays(k, -1)];
+  const prevHasMeals = !!prev && MEALS.some((m) => (prev.meals[m.id] || []).length);
+  const todayHasMeals = MEALS.some((m) => (dayLog(k).meals[m.id] || []).length);
+  $("#copyYesterdayBtn").classList.toggle("hidden", !prevHasMeals || todayHasMeals);
+
   renderQuickRow();
   renderMeals(k);
   renderExercises(k);
@@ -417,6 +435,22 @@ function renderToday() {
   renderSupps(k);
   renderFasting();
 }
+$("#copyYesterdayBtn").addEventListener("click", () => {
+  const prev = state.logs[addDays(viewDate, -1)];
+  if (!prev) return;
+  const log = dayLog(viewDate);
+  let copied = 0;
+  for (const m of MEALS) for (const it of (prev.meals[m.id] || [])) {
+    const item = { ...it };
+    // keep the same time of day, but on the viewed date
+    item.ts = it.ts ? timeToTs(viewDate, tsToTimeStr(it.ts)) : timeToTs(viewDate, "12:00");
+    log.meals[m.id].push(item);
+    copied++;
+  }
+  if (!copied) return;
+  haptic();
+  save(); renderToday(); toast(`Copied ${copied} item${copied === 1 ? "" : "s"} from yesterday`);
+});
 
 function renderQuickRow() {
   const items = [...state.recents, ...state.customFoods].slice(0, 10);
@@ -512,6 +546,7 @@ function renderSupps(k) {
   $$("#suppList li").forEach((li) => li.addEventListener("click", () => {
     const id = li.dataset.sid;
     log.supps[id] = !log.supps[id];
+    if (log.supps[id]) haptic("light");
     save(); renderSupps(viewDate);
   }));
 }
@@ -592,6 +627,7 @@ $("#exDetailSheet").addEventListener("click", (e) => { if (e.target.id === "exDe
 $("#exAdd").addEventListener("click", () => {
   const mins = parseInt($("#exMins").value, 10) || 0;
   if (mins <= 0) return;
+  haptic();
   dayLog(viewDate).walks.push({ name: exSel.name, ic: exSel.ic, mins, kcal: exKcal(mins) });
   save();
   $("#exDetailSheet").classList.add("hidden"); $("#exerciseSheet").classList.add("hidden");
@@ -709,6 +745,7 @@ $("#detailAdd").addEventListener("click", () => {
 });
 
 function addFoodItem(item, src) {
+  haptic();
   if (!item.ts) item.ts = Date.now();
   dayLog(viewDate).meals[sheetMeal].push(item);
   if (src) {
@@ -923,7 +960,7 @@ function downscale(file, max) {
     img.onerror = rej; img.src = URL.createObjectURL(file);
   });
 }
-async function aiEstimate(b64, mime) {
+async function aiEstimateCall(content) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -935,10 +972,7 @@ async function aiEstimate(b64, mime) {
     body: JSON.stringify({
       model: "claude-opus-4-8",
       max_tokens: 500,
-      messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: mime, data: b64 } },
-        { type: "text", text: "Estimate the food in this photo as a single combined meal. Give your best numeric estimate of total calories and macros for the full portion shown. Respond with JSON only." },
-      ] }],
+      messages: [{ role: "user", content }],
       output_config: { format: { type: "json_schema", schema: {
         type: "object", additionalProperties: false,
         properties: { name: { type: "string" }, kcal: { type: "integer" }, protein_g: { type: "integer" }, carbs_g: { type: "integer" }, fat_g: { type: "integer" } },
@@ -952,6 +986,39 @@ async function aiEstimate(b64, mime) {
   const j = JSON.parse(txt);
   return { name: j.name, kcal: j.kcal, p: j.protein_g, c: j.carbs_g, f: j.fat_g };
 }
+function aiEstimate(b64, mime) {
+  return aiEstimateCall([
+    { type: "image", source: { type: "base64", media_type: mime, data: b64 } },
+    { type: "text", text: "Estimate the food in this photo as a single combined meal. Give your best numeric estimate of total calories and macros for the full portion shown. Respond with JSON only." },
+  ]);
+}
+function aiEstimateText(desc) {
+  return aiEstimateCall([
+    { type: "text", text: "Estimate the calories and macros for this meal described by the user. Treat it as one combined meal, use a short title-cased name, and give your best numeric estimate for the full portion described. Description: " + desc },
+  ]);
+}
+
+/* ---------- describe food ---------- */
+$("#describeBtn").addEventListener("click", () => {
+  if (!state.settings.apiKey) { toast("Add an Anthropic API key in Settings first"); return; }
+  $("#describeText").value = "";
+  $("#describeSheet").classList.remove("hidden");
+  $("#describeText").focus();
+});
+$("#describeClose").addEventListener("click", () => $("#describeSheet").classList.add("hidden"));
+$("#describeSheet").addEventListener("click", (e) => { if (e.target.id === "describeSheet") $("#describeSheet").classList.add("hidden"); });
+$("#describeGo").addEventListener("click", async () => {
+  const desc = $("#describeText").value.trim();
+  if (!desc) return toast("Describe what you ate first");
+  const btn = $("#describeGo");
+  btn.disabled = true; btn.textContent = "Estimating…";
+  try {
+    const est = await aiEstimateText(desc);
+    $("#describeSheet").classList.add("hidden");
+    openQuick("ai", est);
+  } catch (err) { toast("AI failed: " + (err.message || "error")); }
+  btn.disabled = false; btn.textContent = "Estimate";
+});
 
 /* ---------- barcode scan ---------- */
 // Safari/WKWebView (the native app's runtime) doesn't implement the

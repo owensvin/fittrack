@@ -116,7 +116,10 @@
 
       <!-- One-tap quick log -->
       <section class="card quick-card" id="quickCard">
-        <div class="card-head"><h3><span class="ic t-amber" data-ic="bolt"></span>Quick log</h3></div>
+        <div class="card-head">
+          <h3><span class="ic t-amber" data-ic="bolt"></span>Quick log</h3>
+          <button class="btn small hidden" id="copyYesterdayBtn"><span class="ic" data-ic="copy"></span>Copy yesterday</button>
+        </div>
         <div class="quick-row" id="quickRow"></div>
       </section>
 
@@ -345,8 +348,9 @@
       <div id="foodList" class="food-list"></div>
       <div class="sheet-actions">
         <button class="btn ghost" id="scanBtn"><span class="ic" data-ic="barcode"></span>Scan</button>
-        <button class="btn ghost" id="aiBtn"><span class="ic" data-ic="sparkle"></span>AI photo</button>
-        <button class="btn ghost" id="quickAddBtn"><span class="ic" data-ic="bolt"></span>Quick add</button>
+        <button class="btn ghost" id="aiBtn"><span class="ic" data-ic="sparkle"></span>Photo</button>
+        <button class="btn ghost" id="describeBtn"><span class="ic" data-ic="mic"></span>Describe</button>
+        <button class="btn ghost" id="quickAddBtn"><span class="ic" data-ic="bolt"></span>Quick</button>
         <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="plus"></span>Custom</button>
       </div>
       <input type="file" id="aiPhotoInput" accept="image/*" capture="environment" hidden>
@@ -361,6 +365,19 @@
         <button class="sheet-close" id="infoPopupClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <p class="muted" id="infoPopupBody"></p>
+    </div>
+  </div>
+
+  <!-- ===== Describe food (AI) ===== -->
+  <div id="describeSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2>Describe your meal</h2>
+        <button class="sheet-close" id="describeClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <p class="muted" style="margin-bottom:10px">Type it or tap the mic on your keyboard and just say it — e.g. "large chicken burrito with rice, beans and cheese". AI estimates the macros; you can tweak before adding.</p>
+      <textarea id="describeText" rows="3" placeholder="What did you eat?"></textarea>
+      <button class="btn primary full" id="describeGo">Estimate</button>
     </div>
   </div>
 
@@ -512,6 +529,7 @@
 
   <script src="js/vendor/capacitor.js"></script>
   <script src="js/vendor/capacitor-local-notifications.js"></script>
+  <script src="js/vendor/capacitor-haptics.js"></script>
   <script src="js/vendor/html5-qrcode.min.js"></script>
   <script src="js/foods.js"></script>
   <script src="js/app.js"></script>
