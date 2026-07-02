@@ -17,6 +17,8 @@ on:
       - "manifest.webmanifest"
       - "capacitor.config.json"
       - "package.json"
+      - "package-lock.json"
+      - "plugins/**"
       - "scripts/**"
       - ".github/workflows/build-ios.yml"
 
