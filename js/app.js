@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.7";
+const APP_VERSION = "2.8";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -124,7 +124,7 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     supplements: defaultSupplements(),
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, waterEnabled: true, reduceMotion: false },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, waterEnabled: true, reduceMotion: false, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10 } },
   };
 }
 function loadState() {
@@ -136,6 +136,7 @@ function loadState() {
       if (!s.settings.reminder) s.settings.reminder = { enabled: false, time: "19:00" };
       if (s.settings.waterEnabled === undefined) s.settings.waterEnabled = true;
       if (s.settings.reduceMotion === undefined) s.settings.reduceMotion = false;
+      if (!s.settings.timer) s.settings.timer = { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10 };
       if (!s.goals || !s.goals.length) {
         s.goals = [];
         const p = s.profile;
@@ -255,7 +256,7 @@ function showOnboarding() {
 function renderObSupps() {
   $("#obSuppList").innerHTML = ob.supplements.length
     ? ob.supplements.map((s) =>
-        `<li><span class="row-label"><span class="ic" data-ic="pill"></span>${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
+        `<li><span class="row-label">${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
          <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
     : `<li class="muted" style="border-top:none">Nothing added yet.</li>`;
   renderIcons($("#obSuppList"));
@@ -370,20 +371,20 @@ function ringMetrics(k) {
   return { t, budget, cal, pro, mov, remaining: budget - t.kcal };
 }
 function drawRings(m) {
-  const cx = 84, cy = 84;
+  const cx = 95, cy = 95;
   const rings = [
-    { r: 70, pct: m.cal, color: "var(--amber)" },
-    { r: 54, pct: m.pro, color: "var(--accent)" },
-    { r: 38, pct: m.mov, color: "var(--blue)" },
+    { r: 83, pct: m.cal, color: "var(--amber)" },
+    { r: 65, pct: m.pro, color: "var(--accent)" },
+    { r: 47, pct: m.mov, color: "var(--blue)" },
   ];
   let circles = "";
   rings.forEach((rg) => {
     const C = 2 * Math.PI * rg.r, pct = clamp(rg.pct, 0, 1);
-    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="13"/>`;
-    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="13" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>`;
+    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="12"/>`;
+    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>`;
   });
   $("#ringsWrap").innerHTML =
-    `<svg viewBox="0 0 168 168">${circles}</svg>
+    `<svg viewBox="0 0 190 190">${circles}</svg>
      <div class="rings-center">
        <span class="big ${m.remaining < 0 ? "over" : ""}">${r0(Math.abs(m.remaining))}</span>
        <label>${m.remaining < 0 ? "OVER" : "kcal left"}</label>
@@ -582,7 +583,7 @@ function renderFasting() {
     if (!ts || ts > Date.now()) { $("#fastTimer").textContent = "No meals logged yet"; return; }
     const mins = Math.floor((Date.now() - ts) / 60000);
     const h = Math.floor(mins / 60), m = mins % 60;
-    $("#fastTimer").textContent = `${h}h ${String(m).padStart(2, "0")}m since last meal`;
+    $("#fastTimer").textContent = mins < 1 ? "Just now" : h < 1 ? `${m}m` : `${h}h ${String(m).padStart(2, "0")}m`;
   };
   tick(); fastInterval = setInterval(tick, 30000);
 }
@@ -1152,8 +1153,13 @@ function resumeScan(instance) {
 }
 
 /* ---------- Training: EMOM / AMRAP timer ---------- */
-let timerMode = "emom", emomInt = 60, emomRounds = 10, amrapMins = 10;
+let timerMode = state.settings.timer.mode, emomInt = state.settings.timer.emomInt,
+    emomRounds = state.settings.timer.emomRounds, amrapMins = state.settings.timer.amrapMins;
 let tmr = null, tmrInt = null, audioCtx = null;
+function saveTimerCfg() {
+  state.settings.timer = { mode: timerMode, emomInt, emomRounds, amrapMins };
+  save();
+}
 
 function beep(freq, dur, vol) {
   try {
@@ -1180,22 +1186,53 @@ function chipPick(sel, attr, cb) {
     cb(+b.dataset[attr]);
   });
 }
-chipPick("#emomIntChips", "s", (v) => (emomInt = v));
-chipPick("#emomRoundChips", "r", (v) => (emomRounds = v));
-chipPick("#amrapMinChips", "m", (v) => (amrapMins = v));
-$("#timerModeSeg").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  timerMode = b.dataset.val;
-  $$("#timerModeSeg button").forEach((x) => x.classList.toggle("active", x === b));
+chipPick("#emomIntChips", "s", (v) => { emomInt = v; saveTimerCfg(); });
+chipPick("#emomRoundChips", "r", (v) => { emomRounds = v; saveTimerCfg(); });
+chipPick("#amrapMinChips", "m", (v) => { amrapMins = v; saveTimerCfg(); });
+function syncTimerUI() {
+  $$("#timerModeSeg button").forEach((x) => x.classList.toggle("active", x.dataset.val === timerMode));
+  $$("#emomIntChips button").forEach((x) => x.classList.toggle("active", +x.dataset.s === emomInt));
+  $$("#emomRoundChips button").forEach((x) => x.classList.toggle("active", +x.dataset.r === emomRounds));
+  $$("#amrapMinChips button").forEach((x) => x.classList.toggle("active", +x.dataset.m === amrapMins));
   $("#emomFields").classList.toggle("hidden", timerMode !== "emom");
   $("#amrapFields").classList.toggle("hidden", timerMode !== "amrap");
   $("#timerHint").textContent = timerMode === "emom"
     ? "EMOM: start a new set every interval — rest with whatever time is left."
     : "AMRAP: as many rounds as possible before time runs out. Tap +1 each time you finish a round.";
+}
+$("#timerModeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  timerMode = b.dataset.val;
+  saveTimerCfg();
+  syncTimerUI();
 });
 
 function timerElapsed() {
   return ((tmr.pausedAt || Date.now()) - tmr.startTs - tmr.pausedTotal) / 1000;
+}
+// A "finished!" local notification fires even if the phone locks mid-workout.
+// (A live Dynamic Island countdown needs a native ActivityKit widget extension —
+// not feasible with this CI-regenerated project yet.)
+function timerLN() { return window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications; }
+async function scheduleTimerNotif() {
+  const LN = timerLN();
+  if (!isNativeApp() || !LN || !tmr || tmr.finished) return;
+  try {
+    const perm = await LN.requestPermissions();
+    if (perm.display !== "granted") return;
+    const remaining = tmr.total - timerElapsed();
+    if (remaining <= 0) return;
+    await LN.schedule({ notifications: [{
+      id: 2, title: "FitTrack",
+      body: (tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60} min`) + " finished — nice work!",
+      schedule: { at: new Date(Date.now() + remaining * 1000) },
+    }] });
+  } catch (_) {}
+}
+async function cancelTimerNotif() {
+  const LN = timerLN();
+  if (!isNativeApp() || !LN) return;
+  try { await LN.cancel({ notifications: [{ id: 2 }] }); } catch (_) {}
 }
 $("#timerStart").addEventListener("click", () => {
   const total = timerMode === "emom" ? emomInt * emomRounds : amrapMins * 60;
@@ -1207,6 +1244,7 @@ $("#timerStart").addEventListener("click", () => {
   $("#toPause").classList.remove("hidden");
   $("#timerOverlay").classList.remove("hidden");
   beep(980, 0.2); haptic();
+  scheduleTimerNotif();
   clearInterval(tmrInt); tmrInt = setInterval(timerTick, 200); timerTick();
 });
 function timerTick() {
@@ -1237,6 +1275,7 @@ function timerTick() {
 function finishTimer() {
   tmr.finished = true;
   clearInterval(tmrInt);
+  cancelTimerNotif();
   const o = $("#timerOverlay");
   o.classList.remove("work", "warn"); o.classList.add("done");
   $("#toTime").textContent = "Done";
@@ -1259,13 +1298,19 @@ $("#toPause").addEventListener("click", () => {
   if (tmr.pausedAt) {
     tmr.pausedTotal += Date.now() - tmr.pausedAt; tmr.pausedAt = null;
     $("#toPause").textContent = "Pause";
+    scheduleTimerNotif();
   } else {
     tmr.pausedAt = Date.now();
     $("#toPause").textContent = "Resume";
+    cancelTimerNotif();
   }
 });
 $("#toEnd").addEventListener("click", () => {
-  if (tmr && !tmr.finished && timerElapsed() > 30) return finishTimer();
+  if (tmr && !tmr.finished) {
+    if (!confirm("End this workout early?")) return;
+    cancelTimerNotif();
+    if (timerElapsed() > 30) return finishTimer();
+  }
   closeTimer();
 });
 $("#toLog").addEventListener("click", () => {
@@ -1278,11 +1323,13 @@ $("#toLog").addEventListener("click", () => {
   renderTraining();
 });
 function closeTimer() {
+  cancelTimerNotif();
   clearInterval(tmrInt); tmr = null;
   const o = $("#timerOverlay");
   o.classList.add("hidden"); o.classList.remove("work", "warn", "done");
 }
 function renderTraining() {
+  syncTimerUI();
   const sessions = [];
   for (let i = 0; i < 14; i++) {
     const dk = addDays(todayKey(), -i), l = state.logs[dk];
@@ -1397,7 +1444,7 @@ function renderCalChart() {
   const rx = Math.min(3, bw / 3.5);
   const Y = (v) => T + (1 - v / max) * (H - T - B);
   const gap = Math.min(4, bw * 0.15);
-  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > p.kcalTarget; return `<rect x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
+  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > p.kcalTarget; return `<rect data-tip="${fmtShort(d)} · ${r0(v)} kcal" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
   $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/><line x1="${L}" y1="${Y(p.kcalTarget).toFixed(1)}" x2="${W - R}" y2="${Y(p.kcalTarget).toFixed(1)}" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".4"/><text x="${W - R}" y="${(Y(p.kcalTarget) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${p.kcalTarget}</text>${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
   $$("#calRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === calRange));
 }
@@ -1453,6 +1500,25 @@ function renderWeekCard() {
   $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));
 }
 
+/* ---------- chart tap tooltip ---------- */
+const chartTip = document.createElement("div");
+chartTip.className = "chart-tip hidden";
+document.body.appendChild(chartTip);
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (el) {
+    const r = el.getBoundingClientRect();
+    chartTip.textContent = el.dataset.tip;
+    chartTip.classList.remove("hidden");
+    chartTip.style.left = clamp(r.left + r.width / 2, 60, innerWidth - 60) + "px";
+    chartTip.style.top = Math.max(r.top - 8, 40) + "px";
+    clearTimeout(chartTip._t);
+    chartTip._t = setTimeout(() => chartTip.classList.add("hidden"), 2400);
+  } else if (!chartTip.classList.contains("hidden")) {
+    chartTip.classList.add("hidden");
+  }
+});
+
 /* ---------- Summary detail (full screen) ---------- */
 // Bars diverging from a centered zero line: negative = green (deficit / loss),
 // positive = amber (over target / gain).
@@ -1469,7 +1535,8 @@ function diffBarChart(points, unit) {
     if (h < 0.5) return "";
     const y = p.v < 0 ? midY : midY - h;
     const color = p.v < 0 ? "var(--accent)" : "var(--amber)";
-    return `<rect x="${(L + i * bw + gap / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${h.toFixed(1)}" rx="${rx.toFixed(1)}" fill="${color}" opacity="0.85"/>`;
+    const tip = `${fmtShort(p.d)} · ${p.v > 0 ? "+" : ""}${unit === "kg" ? r1(p.v) + " kg" : r0(p.v) + " kcal"}`;
+    return `<rect data-tip="${tip}" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${h.toFixed(1)}" rx="${rx.toFixed(1)}" fill="${color}" opacity="0.85"/>`;
   }).join("");
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
     <line x1="${L}" y1="${midY}" x2="${W - R}" y2="${midY}" stroke="var(--border)"/>
@@ -1660,7 +1727,7 @@ $("#setReminderTime").addEventListener("change", () => {
 function renderSuppSettings() {
   $("#suppSettingsList").innerHTML = state.supplements.length
     ? state.supplements.map((s) =>
-        `<li><span class="row-label"><span class="ic" data-ic="pill"></span>${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
+        `<li><span class="row-label">${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
          <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
     : `<li class="muted" style="border-top:none">No supplements yet — add one below.</li>`;
   renderIcons($("#suppSettingsList"));
