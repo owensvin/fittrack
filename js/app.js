@@ -1096,33 +1096,18 @@ function inRange(entries, days) {
 }
 let weightRange = 30, calRange = 14;
 function renderWeightChart() {
-  const p = state.profile;
   const fullMa = movingAvg(state.weights);
   const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
-  const projDays = Math.max(0, daysBetween(todayKey(), p.longDate));
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goal: p.sprintGoalKg, unit: "kg", projDays });
+  const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const nearGoal = sortedGoals[0], farGoal = sortedGoals[sortedGoals.length - 1];
+  const projDays = farGoal ? Math.max(0, daysBetween(todayKey(), farGoal.date)) : 0;
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goal: nearGoal ? nearGoal.targetKg : null, unit: "kg", projDays });
   $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
   $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
 }
 $("#weightRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightRange = +b.dataset.d; renderWeightChart(); renderWaistChart();
-});
-let weightFullRange = 365;
-function renderWeightFullChart() {
-  const p = state.profile;
-  const fullMa = movingAvg(state.weights);
-  const entries = inRange(state.weights, weightFullRange), ma = inRange(fullMa, weightFullRange);
-  const projDays = Math.max(0, daysBetween(todayKey(), p.longDate));
-  $("#weightFullChart").innerHTML = lineChart({ entries, ma, goal: state.goals[0] ? state.goals[0].targetKg : null, unit: "kg", projDays: 0 });
-  $$("#weightFullRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightFullRange));
-}
-$("#weightExpandBtn").addEventListener("click", () => { $("#weightFullSheet").classList.remove("hidden"); renderWeightFullChart(); });
-$("#weightFullClose").addEventListener("click", () => $("#weightFullSheet").classList.add("hidden"));
-$("#weightFullSheet").addEventListener("click", (e) => { if (e.target.id === "weightFullSheet") $("#weightFullSheet").classList.add("hidden"); });
-$("#weightFullRangeChips").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  weightFullRange = +b.dataset.d; renderWeightFullChart();
 });
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
@@ -1161,17 +1146,35 @@ function renderWeekCard() {
   const ma = movingAvg(state.weights); let actual = null;
   if (ma.length >= 2) { const past = [...ma].reverse().find((m) => m.d <= addDays(todayKey(), -days)); if (past) actual = ma[ma.length - 1].v - past.v; }
   const adherence = r0((kcalDays / days) * 100);
+  const maxMag = Math.max(Math.abs(estChange), Math.abs(actual || 0), 0.2);
+  const estPct = clamp(Math.abs(estChange) / maxMag, 0, 1) * 100;
+  const actPct = actual != null ? clamp(Math.abs(actual) / maxMag, 0, 1) * 100 : 0;
   $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></h3></div>
     <div class="chips" id="summaryChips">
       <button data-d="7" class="${days === 7 ? "active" : ""}">Week</button>
       <button data-d="30" class="${days === 30 ? "active" : ""}">Month</button>
     </div>
-    <p class="muted" style="margin:10px 0 12px">${kcalDays}/${days} days logged (${adherence}%) · ${walkDays} active days</p>
+    <div class="adherence-row">
+      <div class="mini-bar"><div class="mini-bar-fill" style="width:${adherence}%;background:var(--accent)"></div></div>
+      <span class="adherence-label">${kcalDays}/${days} days logged (${adherence}%)</span>
+    </div>
+    <div class="compare-chart">
+      <div class="compare-row">
+        <span class="compare-lab">Estimated<br><span class="muted">from food</span></span>
+        <div class="mini-bar"><div class="mini-bar-fill" style="width:${estPct}%;background:var(--amber)"></div></div>
+        <span class="compare-val">${kcalDays ? (estChange >= 0 ? "−" : "+") + Math.abs(estChange) + "kg" : "—"}</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-lab">Actual<br><span class="muted">weight trend</span></span>
+        <div class="mini-bar"><div class="mini-bar-fill" style="width:${actPct}%;background:var(--accent)"></div></div>
+        <span class="compare-val">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + "kg" : "—"}</span>
+      </div>
+    </div>
     <div class="stat-grid">
       <div class="stat-box"><div class="v">${avgK || "—"}</div><div class="k">avg kcal / day</div></div>
       <div class="stat-box"><div class="v">${kcalDays ? (avgDef >= 0 ? "−" : "+") + Math.abs(avgDef) : "—"}</div><div class="k">avg deficit</div></div>
-      <div class="stat-box"><div class="v">${kcalDays ? (estChange >= 0 ? "−" : "+") + Math.abs(estChange) + " kg" : "—"}</div><div class="k">est. change (food)</div></div>
-      <div class="stat-box"><div class="v">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + " kg" : "—"}</div><div class="k">actual trend</div></div>
+      <div class="stat-box"><div class="v">${walkDays}</div><div class="k">active days</div></div>
+      <div class="stat-box"><div class="v">${streak()}</div><div class="k">day streak</div></div>
     </div>`;
   renderIcons($("#weekCard"));
   $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));

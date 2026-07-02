@@ -132,5 +132,30 @@ const FOOD_DB = [
   { id: "honey",      name: "Honey",                   serving: "1 tbsp (21 g)",    kcal: 64,  p: 0.1, c: 17.3,f: 0 },
   { id: "sugar",      name: "Sugar",                   serving: "1 tsp (4 g)",      kcal: 16,  p: 0,   c: 4,   f: 0 },
   { id: "dressing",   name: "Salad dressing",          serving: "1 tbsp (15 g)",    kcal: 60,  p: 0.1, c: 2.5, f: 5.5 },
-  { id: "hummus",     name: "Hummus",                  serving: "2 tbsp (30 g)",    kcal: 70,  p: 2,   c: 4,   f: 5 }
+  { id: "hummus",     name: "Hummus",                  serving: "2 tbsp (30 g)",    kcal: 70,  p: 2,   c: 4,   f: 5 },
+
+  // Australian staples & takeaway
+  { id: "au_weetbix",  name: "Weet-Bix",                serving: "2 biscuits (23 g)",kcal: 76,  p: 2.2, c: 12.5,f: 0.6 },
+  { id: "au_vegemite", name: "Vegemite",                serving: "1 tsp (5 g)",      kcal: 10,  p: 0.9, c: 0.9, f: 0 },
+  { id: "au_milo",     name: "Milo powder",             serving: "3 tbsp (18 g)",    kcal: 75,  p: 1.4, c: 12,  f: 1.3 },
+  { id: "au_timtam",   name: "Tim Tam",                 serving: "1 biscuit (20 g)", kcal: 96,  p: 1,   c: 11,  f: 5 },
+  { id: "au_anzac",    name: "Anzac biscuit",           serving: "1 biscuit (35 g)", kcal: 150, p: 1.5, c: 20,  f: 7 },
+  { id: "au_icedvovo", name: "Iced VoVo",               serving: "1 biscuit (24 g)", kcal: 100, p: 1,   c: 17,  f: 3 },
+  { id: "au_shapes",   name: "Arnott's Shapes (BBQ)",   serving: "12 pieces (25 g)", kcal: 120, p: 2,   c: 16,  f: 5 },
+  { id: "au_meatpie",  name: "Meat pie",                serving: "1 pie (175 g)",    kcal: 434, p: 14,  c: 39,  f: 24 },
+  { id: "au_sausroll", name: "Sausage roll",            serving: "1 roll (110 g)",   kcal: 330, p: 8,   c: 24,  f: 22 },
+  { id: "au_chikoroll",name: "Chiko roll",              serving: "1 roll (170 g)",   kcal: 400, p: 10,  c: 40,  f: 20 },
+  { id: "au_lamington",name: "Lamington",               serving: "1 piece (65 g)",   kcal: 250, p: 3,   c: 35,  f: 11 },
+  { id: "au_pavlova",  name: "Pavlova",                 serving: "1 slice (100 g)",  kcal: 250, p: 3,   c: 45,  f: 7 },
+  { id: "au_parma",    name: "Chicken parmigiana",      serving: "1 pub serve (400 g)",kcal:850, p: 55,  c: 60,  f: 40 },
+  { id: "au_schnitzel",name: "Chicken schnitzel, cooked",serving:"100 g",            kcal: 220, p: 20,  c: 12,  f: 10 },
+  { id: "au_fairybread",name:"Fairy bread",             serving: "2 slices (50 g)",  kcal: 180, p: 3,   c: 30,  f: 5 },
+  { id: "au_damper",   name: "Damper (bush bread)",     serving: "1 slice (60 g)",   kcal: 160, p: 4,   c: 30,  f: 2 },
+  { id: "au_barramundi",name:"Barramundi, grilled",     serving: "100 g",            kcal: 130, p: 22,  c: 0,   f: 4 },
+  { id: "au_lambchop", name: "Lamb chop, grilled",      serving: "100 g",            kcal: 250, p: 25,  c: 0,   f: 16 },
+  { id: "au_snag",     name: "Sausage sizzle (snag + bread + onion)",serving:"1 (120 g)",kcal:330,p: 12,  c: 30,  f: 18 },
+  { id: "au_gaytime",  name: "Golden Gaytime",          serving: "1 stick (61 g)",   kcal: 220, p: 3,   c: 22,  f: 13 },
+  { id: "au_flatwhite",name: "Flat white",              serving: "1 cup (200 ml)",   kcal: 100, p: 5,   c: 8,   f: 5 },
+  { id: "au_icedcoffee",name:"Iced coffee (bottled)",   serving: "500 ml",           kcal: 380, p: 12,  c: 55,  f: 12 },
+  { id: "au_scroll",   name: "Cheese & Vegemite scroll",serving: "1 scroll (120 g)", kcal: 350, p: 12,  c: 45,  f: 13 }
 ];

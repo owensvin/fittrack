@@ -162,13 +162,11 @@
 
     <!-- PROGRESS -->
     <main id="view-progress" class="view hidden">
+      <header class="page-header"><h1>Progress</h1></header>
       <section class="card" id="weekCard"></section>
       <section id="goalCards"></section>
       <section class="card">
-        <div class="card-head"><h3>Weight</h3>
-          <span class="muted" id="weightDelta"></span>
-          <button class="add-btn" id="weightExpandBtn"><span class="ic" data-ic="expand"></span></button>
-        </div>
+        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
         <div class="chips" id="weightRangeChips">
           <button data-d="14">14d</button>
           <button data-d="30" class="active">30d</button>
@@ -196,6 +194,7 @@
 
     <!-- BODY -->
     <main id="view-body" class="view hidden">
+      <header class="page-header"><h1>Body</h1></header>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="scale"></span>Weight</h3></div>
         <div class="entry-row">
@@ -223,6 +222,7 @@
 
     <!-- SETTINGS -->
     <main id="view-settings" class="view hidden">
+      <header class="page-header"><h1>Settings</h1></header>
       <section class="card">
         <div class="card-head"><h3>Targets</h3></div>
         <p class="muted" style="margin-bottom:10px">How fast you want to lose weight, and what that means for your daily numbers.</p>
@@ -361,24 +361,6 @@
         <button class="sheet-close" id="infoPopupClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <p class="muted" id="infoPopupBody"></p>
-    </div>
-  </div>
-
-  <!-- ===== Full-screen weight history ===== -->
-  <div id="weightFullSheet" class="sheet hidden">
-    <div class="sheet-panel full">
-      <div class="sheet-head">
-        <h2>Weight history</h2>
-        <button class="sheet-close" id="weightFullClose"><span class="ic" data-ic="x"></span></button>
-      </div>
-      <div class="chips" id="weightFullRangeChips">
-        <button data-d="30">30d</button>
-        <button data-d="90">90d</button>
-        <button data-d="180">180d</button>
-        <button data-d="365" class="active">365d</button>
-      </div>
-      <div id="weightFullChart" class="chart"></div>
-      <p class="legend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
     </div>
   </div>
 
