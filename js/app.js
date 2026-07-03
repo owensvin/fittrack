@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.11";
+const APP_VERSION = "2.12";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -18,6 +18,7 @@ function addDays(k, n) { const d = fromKey(k); d.setDate(d.getDate() + n); retur
 function todayKey() { return toKey(new Date()); }
 function daysBetween(k1, k2) { return Math.round((fromKey(k2) - fromKey(k1)) / 86400000); }
 function fmtShort(k) { return fromKey(k).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+function fmtTime(ts) { return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
 function isWeekend(k) { const d = fromKey(k).getDay(); return d === 0 || d === 6; }
 
 // Subtle native haptics; silently no-ops in the browser / if the plugin is missing.
@@ -150,6 +151,7 @@ function loadState() {
         if (p && p.sprintGoalKg) s.goals.push({ id: "g1", label: "Short-term", targetKg: p.sprintGoalKg, date: p.sprintDate });
         if (p && p.longGoalKg) s.goals.push({ id: "g2", label: "Long-term", targetKg: p.longGoalKg, date: p.longDate });
       }
+      if (s.weights) for (const w of s.weights) { if (!w.ts) w.ts = fromKey(w.d).toISOString(); }
       return s;
     }
   } catch (e) { console.error("load failed", e); }
@@ -198,11 +200,38 @@ const GLOSSARY = {
   macros: { title: "Macros", body: "Protein builds/preserves muscle (4 kcal/g). Fat supports hormones and vitamin absorption (9 kcal/g). Carbs are your main energy source, especially for workouts (4 kcal/g). Calories are the total energy from all three combined." },
   program: { title: "EMOM program", body: "List one move per line (e.g. Swings / Goblet squats / Push press / Rest) and it cycles round to round — round 1 is line 1, round 2 is line 2, and it wraps back to line 1 after the list ends. A 4-move list on a 12-round EMOM repeats the circuit 3 times. Leave it blank to just see a plain round counter. This only drives EMOM, since AMRAP's rounds aren't tied to fixed minutes — there it's shown as a fixed circuit to repeat." },
   streak: { title: "Streak & adherence", body: "There are two streaks: the flame is your logging streak — consecutive days you logged anything at all. The target icon is your on-target streak — consecutive days you also stayed under your calorie budget. Missing your target doesn't break the logging streak, and vice versa. Adherence % (in the Summary) is just days logged ÷ days in that period — it only needs you to show up, not hit target." },
+  bmi: { title: "BMI", body: "Body Mass Index — weight (kg) ÷ height (m)². A rough population-level screening number, not a precise measure of body composition (it can't tell fat from muscle). Standard bands: under 18.5 Underweight, 18.5–24.9 Normal, 25–29.9 Overweight, 30+ Obese. Updates automatically from your latest weigh-in." },
 };
+function bmiGauge(v) {
+  const cx = 110, cy = 104, r = 80, sw = 15, MIN = 15, MAX = 40;
+  const ang = (x) => Math.PI * (1 - (clamp(x, MIN, MAX) - MIN) / (MAX - MIN)); // MIN→π (left), MAX→0 (right)
+  const pt = (x, rad = r) => [cx + rad * Math.cos(ang(x)), cy - rad * Math.sin(ang(x))];
+  const arc = (a, b, color) => {
+    const [x1, y1] = pt(a), [x2, y2] = pt(b);
+    return `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="butt"/>`;
+  };
+  const bands = [[15, 18.5, "var(--blue)"], [18.5, 25, "var(--accent)"], [25, 30, "var(--amber)"], [30, 40, "var(--red)"]];
+  const [nx, ny] = pt(v, r - sw / 2 - 3);
+  const cat = v < 18.5 ? "Underweight" : v < 25 ? "Normal" : v < 30 ? "Overweight" : "Obese";
+  const catColor = v < 18.5 ? "var(--blue)" : v < 25 ? "var(--accent)" : v < 30 ? "var(--amber)" : "var(--red)";
+  const tick = (x, label) => { const [tx, ty] = pt(x, r + 11); return `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8" fill="var(--muted)" text-anchor="middle">${label}</text>`; };
+  return `<svg viewBox="0 0 220 150" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:260px;display:block;margin:4px auto 2px">
+    ${bands.map((b) => arc(b[0], b[1], b[2])).join("")}
+    ${tick(18.5, "18.5")}${tick(25, "25")}${tick(30, "30")}
+    <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="5" fill="var(--text)"/>
+    <text x="${cx}" y="${cy + 26}" font-size="22" font-weight="700" fill="var(--text)" text-anchor="middle">${r1(v)}</text>
+    <text x="${cx}" y="${cy + 40}" font-size="10" font-weight="600" fill="${catColor}" text-anchor="middle">${cat}</text>
+  </svg>`;
+}
 function openInfo(key) {
   const g = GLOSSARY[key]; if (!g) return;
   $("#infoPopupTitle").textContent = g.title;
   $("#infoPopupBody").textContent = g.body;
+  const vis = $("#infoPopupVisual");
+  if (key === "bmi" && state.weights.length && state.profile) {
+    vis.innerHTML = bmiGauge(bmi(currentWeight(), state.profile.heightCm).val);
+  } else vis.innerHTML = "";
   $("#infoPopup").classList.remove("hidden");
 }
 document.addEventListener("click", (e) => {
@@ -211,6 +240,21 @@ document.addEventListener("click", (e) => {
 });
 $("#infoPopupClose").addEventListener("click", () => $("#infoPopup").classList.add("hidden"));
 $("#infoPopup").addEventListener("click", (e) => { if (e.target.id === "infoPopup") $("#infoPopup").classList.add("hidden"); });
+
+// Keep bottom sheets (esp. the food search dock) above the on-screen keyboard.
+// Native Capacitor keyboard resize can vary, so we drive a --kb inset ourselves
+// from the visual viewport and let CSS lift the sheet by that much.
+(function () {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const update = () => {
+    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty("--kb", kb + "px");
+  };
+  vv.addEventListener("resize", update);
+  vv.addEventListener("scroll", update);
+  update();
+})();
 function renderGlossary() {
   $("#glossaryList").innerHTML = Object.keys(GLOSSARY).map((key) =>
     `<li data-info="${key}"><span class="row-label">${esc(GLOSSARY[key].title)}</span><span class="ic" data-ic="chevR"></span></li>`).join("");
@@ -237,10 +281,16 @@ function budgetFor(k) {
   return targetFor(k) + (p.eatBack ? dayTotals(k).active : 0);
 }
 
+function dailyWeights(entries) {
+  const byDay = {};
+  for (const e of entries) (byDay[e.d] = byDay[e.d] || []).push(e.kg);
+  return Object.keys(byDay).sort().map((d) => ({ d, kg: byDay[d].reduce((a, b) => a + b, 0) / byDay[d].length }));
+}
 function movingAvg(entries, w = 7) {
-  return entries.map((e) => {
+  const daily = dailyWeights(entries);
+  return daily.map((e) => {
     const from = addDays(e.d, -(w - 1));
-    const win = entries.filter((x) => x.d >= from && x.d <= e.d);
+    const win = daily.filter((x) => x.d >= from && x.d <= e.d);
     return { d: e.d, v: win.reduce((s, x) => s + x.kg, 0) / win.length };
   });
 }
@@ -340,7 +390,7 @@ function obFinish() {
     { id: "g" + Date.now(), label: "Short-term", targetKg: parseFloat($("#obSprintW").value), date: $("#obSprintD").value, created: todayKey() },
     { id: "g" + (Date.now() + 1), label: "Long-term", targetKg: parseFloat($("#obLongW").value), date: $("#obLongD").value, created: todayKey() },
   ];
-  state.weights.push({ d: todayKey(), kg: w });
+  state.weights.push({ d: todayKey(), ts: new Date().toISOString(), kg: w });
   if (ob.supplements.length) state.supplements = ob.supplements;
   save();
   $("#onboarding").classList.add("hidden");
@@ -413,7 +463,9 @@ function drawRings(m) {
      <div class="rings-center">
        <span class="big ${m.remaining < 0 ? "over" : ""}">${r0(Math.abs(m.remaining))}</span>
        <label>${m.remaining < 0 ? "OVER" : "kcal left"}</label>
+       <span class="tap-hint"><span class="ic" data-ic="chart"></span>trends</span>
      </div>`;
+  renderIcons($("#ringsWrap"));
 }
 function renderStats(k) {
   const m = ringMetrics(k), p = state.profile;
@@ -424,6 +476,54 @@ function renderStats(k) {
     { lab: "Active", val: `${r0(m.t.active)}/${p.moveTarget}`, c: "var(--blue)" },
   ].map((x) => `<div class="rl-item"><span class="rl-dot" style="background:${x.c}"></span><span class="rl-val">${x.val}</span><span class="rl-lab">${x.lab}</span></div>`).join("");
 }
+
+/* ---------- Trends (tap the rings) ---------- */
+let trendMetric = "kcal", trendRange = 30;
+const TREND_META = {
+  kcal: { lab: "Calories", unit: "kcal", target: () => budgetFor(todayKey()) },
+  p: { lab: "Protein", unit: "g", target: () => state.profile.proteinTarget },
+  c: { lab: "Carbs", unit: "g", target: () => null },
+  f: { lab: "Fat", unit: "g", target: () => null },
+};
+function renderTrends() {
+  const meta = TREND_META[trendMetric], unit = meta.unit;
+  const entries = [];
+  for (let i = trendRange - 1; i >= 0; i--) {
+    const dk = addDays(todayKey(), -i), t = dayTotals(dk);
+    if (t.items > 0) entries.push({ d: dk, kg: r0(t[trendMetric]) });
+  }
+  const ma = movingAvg(entries); // entries are one-per-day, so this is a 7-day smoothed line
+  const tgt = meta.target();
+  const goals = tgt != null ? [{ v: tgt, achieved: false }] : [];
+  $("#trendChart").innerHTML = lineChart({ entries, ma, goals, unit, projDays: 0, rawLine: true });
+  $$("#trendMetricChips button").forEach((b) => b.classList.toggle("active", b.dataset.m === trendMetric));
+  $$("#trendRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === trendRange));
+  if (!entries.length) {
+    $("#trendAvg").textContent = "—"; $("#trendDiff").textContent = "—";
+    $("#trendStats").innerHTML = `<div class="stat-box"><div class="v">0</div><div class="k">days logged</div></div>`;
+    return;
+  }
+  const vals = entries.map((e) => e.kg);
+  const avg = r0(vals.reduce((a, b) => a + b, 0) / vals.length);
+  const diff = ma.length >= 2 ? r0(ma[ma.length - 1].v - ma[0].v) : 0;
+  $("#trendAvg").innerHTML = `${avg} <span class="th-lab" style="display:inline">${unit}</span>`;
+  $("#trendDiff").innerHTML = ma.length >= 2
+    ? `<span class="${diff <= 0 ? "t-green" : "t-amber"}">${diff > 0 ? "+" : ""}${diff} ${unit}</span>`
+    : "—";
+  const hi = Math.max(...vals), lo = Math.min(...vals);
+  const vsT = tgt != null ? avg - tgt : null;
+  $("#trendStats").innerHTML = `
+    <div class="stat-box"><div class="v">${avg}</div><div class="k">avg / day (${unit})</div></div>
+    ${vsT != null ? `<div class="stat-box"><div class="v">${vsT <= 0 ? "−" : "+"}${Math.abs(vsT)}</div><div class="k">vs target</div></div>` : `<div class="stat-box"><div class="v">${entries.length}</div><div class="k">days logged</div></div>`}
+    <div class="stat-box"><div class="v">${hi}</div><div class="k">highest day</div></div>
+    <div class="stat-box"><div class="v">${lo}</div><div class="k">lowest day</div></div>`;
+}
+function openTrends() { renderTrends(); $("#trendsSheet").classList.remove("hidden"); }
+$("#ringsWrap").addEventListener("click", openTrends);
+$("#trendsClose").addEventListener("click", () => $("#trendsSheet").classList.add("hidden"));
+$("#trendsSheet").addEventListener("click", (e) => { if (e.target.id === "trendsSheet") $("#trendsSheet").classList.add("hidden"); });
+$("#trendMetricChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendMetric = b.dataset.m; renderTrends(); });
+$("#trendRangeChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendRange = +b.dataset.d; renderTrends(); });
 
 /* ---------- streaks ----------
    Two different things people mean by "streak": did you show up and log
@@ -1291,8 +1391,27 @@ function syncTimerUI() {
     ? "EMOM: start a new set every interval — rest with whatever time is left."
     : "AMRAP: as many rounds as possible before time runs out. Tap +1 each time you finish a round.";
   $("#timerProgram").value = timerProgram.join("\n");
+  renderProgramTemplates();
   renderProgramPreview();
 }
+const PROGRAM_TEMPLATES = [
+  { name: "KB Strength", moves: ["Kettlebell swings", "Goblet squats", "Push press", "Rest"] },
+  { name: "KB Conditioning", moves: ["Swings", "High pulls", "Snatches", "Rest"] },
+  { name: "Full body", moves: ["Swings", "Clean & press", "Goblet squat", "Rest"] },
+  { name: "Core & swings", moves: ["Russian twists", "Sit-ups", "Kettlebell swings", "Rest"] },
+];
+function renderProgramTemplates() {
+  const cur = timerProgram.join("\n").toLowerCase();
+  $("#programTemplates").innerHTML = PROGRAM_TEMPLATES.map((t, i) =>
+    `<button data-tpl="${i}" class="${t.moves.join("\n").toLowerCase() === cur ? "active" : ""}">${t.name}</button>`).join("")
+    + `<button data-tpl="clear" class="${cur ? "" : "active"}">Custom / clear</button>`;
+}
+$("#programTemplates").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.tpl === "clear") { timerProgram = []; $("#timerProgram").value = ""; $("#timerProgram").focus(); }
+  else { timerProgram = PROGRAM_TEMPLATES[+b.dataset.tpl].moves.slice(); $("#timerProgram").value = timerProgram.join("\n"); }
+  saveTimerCfg(); renderProgramPreview(); renderProgramTemplates();
+});
 function renderProgramPreview() {
   if (!timerProgram.length) { $("#programPreview").textContent = "No program set — just shows a round counter."; return; }
   $("#programPreview").textContent = timerMode === "emom"
@@ -1304,7 +1423,7 @@ $("#timerProgram").addEventListener("input", () => {
   clearTimeout(programSaveTimer);
   programSaveTimer = setTimeout(() => {
     timerProgram = $("#timerProgram").value.split("\n").map((s) => s.trim()).filter(Boolean);
-    saveTimerCfg(); renderProgramPreview();
+    saveTimerCfg(); renderProgramPreview(); renderProgramTemplates();
   }, 300);
 });
 $("#timerModeSeg").addEventListener("click", (e) => {
@@ -1455,32 +1574,29 @@ function closeTimer() {
 }
 function renderTraining() {
   syncTimerUI();
-  const log = dayLog(todayKey()), walks = log.walks || [];
-  $("#trainExerciseList").innerHTML = walks.map((w, i) =>
-    `<li><span class="ic" data-ic="${w.ic || "walk"}"></span><span class="fi-name">${esc(w.name)} <span class="fi-qty">${w.mins} min</span></span>
-     <span class="fi-kcal">−${r0(w.kcal)}</span>
-     <button class="fi-del" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("");
-  renderIcons($("#trainExerciseList"));
-  const total = walks.reduce((s, w) => s + w.kcal, 0);
-  $("#trainExerciseSummary").textContent = walks.length
-    ? `${walks.length} ${walks.length === 1 ? "activity" : "activities"} · ${r0(total)} kcal burned`
-    : "Nothing logged today yet.";
-  $$("#trainExerciseList .fi-del").forEach((b) => b.addEventListener("click", () => {
-    log.walks.splice(+b.dataset.i, 1); save(); renderTraining();
-  }));
+  // Every logged activity (walks, weighted circuits, finished EMOM/AMRAP) rolls
+  // up here, newest first — today's entries are removable.
   const sessions = [];
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 30; i++) {
     const dk = addDays(todayKey(), -i), l = state.logs[dk];
-    if (!l) continue;
-    for (const w of (l.walks || [])) {
-      if (/^(EMOM|AMRAP)/.test(w.name)) sessions.push({ d: dk, ...w });
-    }
+    if (!l || !l.walks) continue;
+    l.walks.forEach((w, idx) => sessions.push({ d: dk, idx, today: dk === todayKey(), ...w }));
   }
   $("#sessionList").innerHTML = sessions.length
-    ? sessions.slice(0, 8).map((s) =>
-        `<li><span class="row-label"><span class="ic" data-ic="dumbbell"></span>${esc(s.name)}</span><span class="d">${fmtShort(s.d)} · ${r0(s.kcal)} kcal</span></li>`).join("")
-    : `<li class="muted" style="border-top:none">Finished workouts you log will show up here.</li>`;
+    ? sessions.slice(0, 12).map((s) =>
+        `<li><span class="row-label"><span class="ic" data-ic="${s.ic || "dumbbell"}"></span>${esc(s.name)}${s.mins ? ` <span class="fi-qty">${s.mins} min</span>` : ""}</span>
+          <span class="ing-right"><span class="d">${s.today ? "Today" : fmtShort(s.d)} · ${r0(s.kcal)} kcal</span>${s.today ? `<button class="fi-del" data-dk="${s.d}" data-i="${s.idx}"><span class="ic" data-ic="x"></span></button>` : ""}</span></li>`).join("")
+    : `<li class="muted" style="border-top:none">Activities and finished workouts you log will show up here.</li>`;
   renderIcons($("#sessionList"));
+  const tLog = state.logs[todayKey()], tWalks = (tLog && tLog.walks) || [];
+  const total = tWalks.reduce((s, w) => s + w.kcal, 0);
+  $("#trainExerciseSummary").textContent = tWalks.length
+    ? `Today: ${tWalks.length} ${tWalks.length === 1 ? "activity" : "activities"} · ${r0(total)} kcal burned`
+    : "Nothing logged today yet — tap + to add an activity.";
+  $$("#sessionList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    const l = state.logs[b.dataset.dk]; if (l && l.walks) l.walks.splice(+b.dataset.i, 1);
+    save(); renderTraining();
+  }));
 }
 
 /* ---------- Progress ---------- */
@@ -1553,11 +1669,15 @@ function renderGoalCards() {
   renderIcons($("#achievedGoalCards"));
 }
 
-function lineChart({ entries, ma, goals, unit, projDays }) {
+function lineChart({ entries, ma, goals, unit, projDays, rawLine }) {
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
   const x0 = entries[0].d;
-  let xMax = daysBetween(x0, entries[entries.length - 1].d), proj = null;
+  // Fractional day position so several weigh-ins on the same day fan out by
+  // time-of-day instead of stacking on one x — this is what surfaces AM/PM swing.
+  const frac = (e) => e.ts ? (new Date(e.ts).getHours() * 60 + new Date(e.ts).getMinutes()) / 1440 : 0;
+  const xNum = (e) => daysBetween(x0, e.d) + frac(e);
+  let xMax = xNum(entries[entries.length - 1]), proj = null;
   const trend = projDays && ma.length >= 3 ? weightTrendPerDay() : null;
   if (trend != null && projDays > 0) {
     const last = ma[ma.length - 1];
@@ -1574,7 +1694,9 @@ function lineChart({ entries, ma, goals, unit, projDays }) {
   const Xn = (n) => L + (n / xMax) * (W - L - R);
   const Y = (v) => T + (1 - (v - vMin) / (vMax - vMin)) * (H - T - B);
   const dots = entries.map((e) =>
-    `<circle data-tip="${fmtShort(e.d)} · ${r1(e.kg)} ${unit}" cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)" stroke="transparent" stroke-width="14"/>`).join("");
+    `<circle data-tip="${fmtShort(e.d)}${e.ts ? " " + fmtTime(e.ts) : ""} · ${r1(e.kg)} ${unit}" cx="${Xn(xNum(e)).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)" stroke="transparent" stroke-width="14"/>`).join("");
+  // Light "scale weight" line joining every raw reading, under the smooth trend.
+  const rawPath = rawLine ? `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${Xn(xNum(e)).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5" stroke-linejoin="round"/>` : "";
   const maPath = ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("");
   const goalLines = gls.map((g) => {
     const color = g.achieved ? "var(--accent)" : "var(--amber)";
@@ -1588,7 +1710,7 @@ function lineChart({ entries, ma, goals, unit, projDays }) {
     <text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>
     <text x="${L - 4}" y="${(Y(vMax - pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMax - pad)}</text>
     <text x="${L - 4}" y="${(Y(vMin + pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMin + pad)}</text>
-    ${goalLines}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
+    ${goalLines}${rawPath}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
 }
 function inRange(entries, days) {
   const from = addDays(todayKey(), -(days - 1));
@@ -1609,8 +1731,12 @@ function renderWeightChart() {
   const achievedSorted = sortedGoals.filter((g) => g.achievedOn);
   const goalLines = achievedSorted.map((g) => ({ v: g.targetKg, achieved: true }))
     .concat(activeSorted.slice(0, 2).map((g) => ({ v: g.targetKg, achieved: false })));
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays });
-  $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true });
+  if (entries.length >= 2) {
+    const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
+    const diff = ma[ma.length - 1].v - ma[0].v;
+    $("#weightDelta").innerHTML = `<span class="trend-hd"><b>${r1(avg)}</b> avg · <b class="${diff <= 0 ? "t-green" : "t-amber"}">${diff <= 0 ? "" : "+"}${r1(diff)} kg</b> trend</span>`;
+  } else $("#weightDelta").textContent = "";
   $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
 }
 $("#weightRangeChips").addEventListener("click", (e) => {
@@ -1689,6 +1815,7 @@ function renderWeekCard() {
         <span class="compare-val">${actual != null ? (actual <= 0 ? "" : "+") + r1(actual) + "kg" : "—"}</span>
       </div>
     </div>
+    ${actual == null ? `<p class="muted" style="margin:-6px 0 14px">Log weight on a couple more days spread across the period to see an actual trend.</p>` : ""}
     <div class="stat-grid">
       <div class="stat-box"><div class="v">${avgK || "—"}</div><div class="k">avg kcal / day</div></div>
       <div class="stat-box"><div class="v">${kcalDays ? (avgDef >= 0 ? "−" : "+") + Math.abs(avgDef) : "—"}</div><div class="k">avg deficit</div></div>
@@ -1760,7 +1887,7 @@ function renderSummaryFull() {
     const t = dayTotals(dk);
     if (t.items > 0) { calPts.push({ d: dk, v: t.kcal - p.kcalTarget }); kcalSum += t.kcal; kcalDays++; }
   }
-  const inRangeW = state.weights.filter((w) => w.d >= startKey && w.d <= endKey);
+  const inRangeW = dailyWeights(state.weights).filter((w) => w.d >= startKey && w.d <= endKey);
   for (let i = 1; i < inRangeW.length; i++) {
     weightPts.push({ d: inRangeW[i].d, v: r1(inRangeW[i].kg - inRangeW[i - 1].kg) });
   }
@@ -1807,31 +1934,56 @@ $("#sumNext").addEventListener("click", () => { if (sumFullOffset > 0) { sumFull
   }, { passive: true });
 })();
 /* ---------- Body ---------- */
+function bmi(kg, cm) {
+  const m = cm / 100, val = kg / (m * m);
+  const category = val < 18.5 ? "Underweight" : val < 25 ? "Normal" : val < 30 ? "Overweight" : "Obese";
+  return { val: r1(val), category };
+}
 function renderBody() {
   const p = state.profile, w = state.weights, ws = state.waists;
   const cw = w.length ? w[w.length - 1].kg : null;
   const wDelta = cw != null ? r1(cw - p.startWeightKg) : null;
   const cwaist = ws.length ? ws[ws.length - 1].cm : null;
   const waistDelta = ws.length >= 2 ? r1(cwaist - ws[0].cm) : null;
+  const b = cw != null ? bmi(cw, p.heightCm) : null;
   $("#bodySummary").innerHTML = `
     <div class="stat-box"><div class="v">${cw != null ? cw + " kg" : "—"}</div><div class="k">current weight</div></div>
     <div class="stat-box"><div class="v">${wDelta != null ? (wDelta <= 0 ? "" : "+") + wDelta + " kg" : "—"}</div><div class="k">since start (${r1(p.startWeightKg)} kg)</div></div>
+    <div class="stat-box"><div class="v">${p.heightCm} cm</div><div class="k">height</div></div>
+    <div class="stat-box"><div class="v">${b ? b.val : "—"}${b ? `<span class="stat-sub">${b.category}</span>` : ""}</div><div class="k">BMI <button class="info-btn" data-info="bmi"><span class="ic" data-ic="info"></span></button></div></div>
     <div class="stat-box"><div class="v">${cwaist != null ? cwaist + " cm" : "—"}</div><div class="k">current waist</div></div>
     <div class="stat-box"><div class="v">${waistDelta != null ? (waistDelta <= 0 ? "" : "+") + waistDelta + " cm" : "—"}</div><div class="k">waist change</div></div>`;
+  renderIcons($("#bodySummary"));
   $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) =>
-    `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-wd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
+    `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${fmtShort(w.d)}${w.ts ? " · " + fmtTime(w.ts) : ""}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
   $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) =>
     `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
   renderIcons($("#weightList")); renderIcons($("#waistList"));
   $$("#weightList .fi-del").forEach((b) => b.addEventListener("click", () => {
-    state.weights = state.weights.filter((w) => w.d !== b.dataset.wd);
+    state.weights = state.weights.filter((w) => (w.ts || w.d) !== b.dataset.wts);
     save(); renderBody(); toast("Weight entry removed");
   }));
   $$("#waistList .fi-del").forEach((b) => b.addEventListener("click", () => {
     state.waists = state.waists.filter((w) => w.d !== b.dataset.cd);
     save(); renderBody(); toast("Waist entry removed");
   }));
+  renderSleepSteps();
   renderPhotos();
+}
+// Rough energy from steps, scaled by bodyweight (~0.0005 kcal · step⁻¹ · kg⁻¹).
+function stepKcal(steps) { return r0(steps * currentWeight() * 0.0005); }
+function renderSleepSteps() {
+  const l = state.logs[todayKey()] || {};
+  const sleepH = l.sleepH, steps = l.steps;
+  $("#sleepInput").value = sleepH != null ? sleepH : "";
+  $("#stepsInput").value = steps != null ? steps : "";
+  $("#sleepStepsSummary").innerHTML = `
+    <div class="stat-box"><div class="v">${sleepH != null ? sleepH + " h" : "—"}</div><div class="k">sleep last night</div></div>
+    <div class="stat-box"><div class="v">${steps != null ? steps.toLocaleString() : "—"}${steps != null ? `<span class="stat-sub">≈ ${stepKcal(steps)} kcal</span>` : ""}</div><div class="k">steps today</div></div>`;
+  renderIcons($("#sleepStepsSummary"));
+  $("#stepsNote").textContent = steps != null
+    ? "Steps are shown for awareness — they're already reflected in your activity level, so they aren't added on top of your calorie budget (that would double-count your logged walks)."
+    : "Log sleep and steps to keep an eye on recovery and daily movement.";
 }
 function renderCalcSheet() {
   const p = state.profile, cw = currentWeight(), sexWord = p.sex === "male" ? "male" : "female";
@@ -1873,9 +2025,9 @@ $("#calcSheet").addEventListener("click", (e) => { if (e.target.id === "calcShee
 $("#weightSave").addEventListener("click", () => {
   const v = parseFloat($("#weightInput").value);
   if (!v || v < 25 || v > 350) return toast("Enter a valid weight");
-  const k = todayKey();
-  state.weights = state.weights.filter((w) => w.d !== k); state.weights.push({ d: k, kg: v });
-  state.weights.sort((a, b) => (a.d < b.d ? -1 : 1)); $("#weightInput").value = "";
+  const now = new Date();
+  state.weights.push({ d: toKey(now), ts: now.toISOString(), kg: v });
+  state.weights.sort((a, b) => (a.ts < b.ts ? -1 : 1)); $("#weightInput").value = "";
   save(); renderBody(); toast("Weight logged");
   checkGoals();
 });
@@ -1886,6 +2038,16 @@ $("#waistSave").addEventListener("click", () => {
   state.waists = state.waists.filter((w) => w.d !== k); state.waists.push({ d: k, cm: v });
   state.waists.sort((a, b) => (a.d < b.d ? -1 : 1)); $("#waistInput").value = "";
   save(); renderBody(); toast("Waist logged");
+});
+$("#sleepSave").addEventListener("click", () => {
+  const v = parseFloat($("#sleepInput").value);
+  if (!(v >= 0) || v > 24) return toast("Enter valid sleep hours");
+  dayLog(todayKey()).sleepH = v; save(); renderSleepSteps(); toast("Sleep logged");
+});
+$("#stepsSave").addEventListener("click", () => {
+  const v = parseInt($("#stepsInput").value, 10);
+  if (!(v >= 0) || v > 200000) return toast("Enter a valid step count");
+  dayLog(todayKey()).steps = v; save(); renderSleepSteps(); toast("Steps logged");
 });
 
 /* photos via IndexedDB */

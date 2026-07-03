@@ -241,6 +241,7 @@
           </div>
         </div>
         <label class="field-label">Program (optional) <button class="info-btn" data-info="program"><span class="ic" data-ic="info"></span></button></label>
+        <div class="chips" id="programTemplates"></div>
         <textarea id="timerProgram" rows="4" placeholder="One move per line, cycles round to round, e.g.&#10;Kettlebell swings&#10;Goblet squats&#10;Push press&#10;Rest"></textarea>
         <p class="muted" id="programPreview" style="margin:6px 0 2px"></p>
         <p class="muted" id="timerHint" style="margin-top:6px">EMOM: start a new set every interval — rest with whatever time is left.</p>
@@ -248,15 +249,11 @@
       </section>
       <section class="card">
         <div class="card-head">
-          <h3><span class="ic t-green" data-ic="pulse"></span>Today's activity</h3>
+          <h3><span class="ic t-amber" data-ic="dumbbell"></span>Recent sessions</h3>
           <button class="add-btn" id="trainExerciseAddBtn"><span class="ic" data-ic="plus"></span></button>
         </div>
-        <ul class="meal-items" id="trainExerciseList"></ul>
-        <p class="muted" id="trainExerciseSummary"></p>
-      </section>
-      <section class="card">
-        <div class="card-head"><h3><span class="ic t-amber" data-ic="dumbbell"></span>Recent sessions</h3></div>
         <ul class="entry-list" id="sessionList"></ul>
+        <p class="muted" id="trainExerciseSummary" style="margin-top:8px"></p>
       </section>
       <div class="bottom-space"></div>
     </main>
@@ -284,6 +281,27 @@
           <button class="btn primary" id="waistSave">Log</button>
         </div>
         <ul class="entry-list" id="waistList"></ul>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3><span class="muted">today</span></div>
+        <div class="dual-entry">
+          <div class="de-field">
+            <label class="field-label"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
+            <div class="entry-row">
+              <input type="number" id="sleepInput" inputmode="decimal" step="0.5" placeholder="7.5">
+              <button class="btn primary" id="sleepSave">Log</button>
+            </div>
+          </div>
+          <div class="de-field">
+            <label class="field-label"><span class="ic" data-ic="walk"></span> Steps</label>
+            <div class="entry-row">
+              <input type="number" id="stepsInput" inputmode="numeric" placeholder="8000">
+              <button class="btn primary" id="stepsSave">Log</button>
+            </div>
+          </div>
+        </div>
+        <div class="stat-grid" id="sleepStepsSummary" style="margin-top:12px"></div>
+        <p class="muted" id="stepsNote" style="margin-top:10px"></p>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-purple" data-ic="camera"></span>Progress photos</h3><span class="muted">on-device only</span></div>
@@ -431,7 +449,6 @@
         <h2 id="sheetTitle">Add food</h2>
         <button class="sheet-close" id="sheetClose"><span class="ic" data-ic="x"></span></button>
       </div>
-      <input type="search" id="foodSearch" placeholder="Search foods…" autocomplete="off">
       <div class="chips" id="foodTabs">
         <button data-tab="all" class="active">All</button>
         <button data-tab="recent">Recents</button>
@@ -447,6 +464,9 @@
         <button class="btn ghost" id="quickAddBtn"><span class="ic" data-ic="bolt"></span>Quick</button>
         <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="plus"></span>Custom</button>
       </div>
+      <div class="search-dock">
+        <input type="search" id="foodSearch" placeholder="Search for a food…" autocomplete="off">
+      </div>
       <input type="file" id="aiPhotoInput" accept="image/*" capture="environment" hidden>
     </div>
   </div>
@@ -458,6 +478,7 @@
         <h2 id="infoPopupTitle">Info</h2>
         <button class="sheet-close" id="infoPopupClose"><span class="ic" data-ic="x"></span></button>
       </div>
+      <div id="infoPopupVisual"></div>
       <p class="muted" id="infoPopupBody"></p>
     </div>
   </div>
@@ -663,6 +684,39 @@
         <button class="sheet-close" id="calcClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" id="calcBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== Trends (tap the rings) ===== -->
+  <div id="trendsSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Trends</h2>
+        <button class="sheet-close" id="trendsClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <div class="chips" id="trendMetricChips">
+          <button data-m="kcal" class="active">Calories</button>
+          <button data-m="p">Protein</button>
+          <button data-m="c">Carbs</button>
+          <button data-m="f">Fat</button>
+        </div>
+        <div class="trend-hero">
+          <div><span class="th-lab">Average</span><span class="th-val" id="trendAvg">—</span></div>
+          <div><span class="th-lab">Difference</span><span class="th-val" id="trendDiff">—</span></div>
+        </div>
+        <div class="chips" id="trendRangeChips">
+          <button data-d="7">1W</button>
+          <button data-d="30" class="active">1M</button>
+          <button data-d="90">3M</button>
+          <button data-d="180">6M</button>
+        </div>
+        <div id="trendChart" class="chart"></div>
+        <p class="legend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">trend</span></p>
+        <p class="field-label">Insights</p>
+        <div class="stat-grid" id="trendStats"></div>
+        <div style="height:24px"></div>
+      </div>
     </div>
   </div>
 

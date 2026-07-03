@@ -190,7 +190,10 @@ textarea { resize: none; line-height: 1.5; }
 
 /* ===== Rings ===== */
 .hero { display: flex; justify-content: center; padding: 10px 6px 6px; }
-.rings-wrap { width: 190px; height: 190px; flex-shrink: 0; position: relative; }
+.rings-wrap { width: 190px; height: 190px; flex-shrink: 0; position: relative; cursor: pointer; }
+.rings-wrap:active { transform: scale(0.97); transition: transform var(--t-fast) var(--ease); }
+.rings-center .tap-hint { font-size: var(--fs-2xs); color: var(--muted2); margin-top: 5px; display: flex; align-items: center; gap: 3px; }
+.rings-center .tap-hint .ic { width: 11px; height: 11px; }
 .rings-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .rings-wrap circle { transition: stroke-dashoffset 0.6s var(--ease); }
 .rings-center {
@@ -200,6 +203,9 @@ textarea { resize: none; line-height: 1.5; }
 .rings-center .big { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -0.5px; line-height: 1; font-variant-numeric: tabular-nums; }
 .rings-center .big.over { color: var(--amber); }
 .rings-center label { font-size: var(--fs-2xs); color: var(--muted); margin-top: 3px; }
+.trend-hero { display: flex; gap: 28px; margin: 14px 0 12px; }
+.trend-hero .th-lab { display: block; font-size: var(--fs-2xs); color: var(--muted); margin-bottom: 2px; }
+.trend-hero .th-val { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 .ring-legend { display: flex; justify-content: space-around; gap: 8px; margin: 12px 0 14px; }
 .rl-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .rl-dot { width: 9px; height: 9px; border-radius: 50%; }
@@ -317,10 +323,17 @@ textarea { resize: none; line-height: 1.5; }
 .stat-box { background: var(--card2); border-radius: var(--r-md); padding: 12px; }
 .stat-box .v { font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-box .k { font-size: var(--fs-2xs); color: var(--muted); margin-top: 2px; }
+.stat-box .k .info-btn { vertical-align: middle; margin-left: 2px; }
+.stat-sub { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); margin-left: 6px; }
 
 /* ===== Body page ===== */
 .entry-row { display: flex; gap: 10px; margin-bottom: 6px; }
 .entry-row input { flex: 1; }
+.dual-entry { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dual-entry .field-label { display: flex; align-items: center; gap: 5px; }
+.dual-entry .field-label .ic { width: 13px; height: 13px; color: var(--muted); }
+.dual-entry .entry-row input { min-width: 0; }
+.dual-entry .btn { padding-left: 12px; padding-right: 12px; }
 .entry-list { list-style: none; margin-top: 8px; }
 .entry-list li { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); font-size: var(--fs-base); }
 .entry-list .row-label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
@@ -410,6 +423,12 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .fav-btn { border: none; background: none; font-size: var(--fs-md); cursor: pointer; padding: 4px; color: var(--muted2); }
 .fav-btn.on { color: var(--amber); }
 .food-empty { text-align: center; color: var(--muted); padding: 36px 16px; font-size: var(--fs-sm); line-height: 1.6; }
+/* Search pinned to the bottom of the food sheet, directly above the keyboard */
+.search-dock { padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.search-dock input { width: 100%; }
+/* Lift the whole sheet above the on-screen keyboard (--kb set from visualViewport) */
+.sheet { padding-bottom: var(--kb, 0px); box-sizing: border-box; transition: padding-bottom var(--t-fast) var(--ease); }
+.sheet-panel { max-height: min(88dvh, calc(100dvh - var(--kb, 0px) - 16px)); }
 .sheet-actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding-top: 12px; }
 .sheet-actions .btn { font-size: var(--fs-2xs); padding: 11px 2px; flex-direction: column; gap: 4px; }
 .sheet-actions .btn .ic { width: 17px; height: 17px; }
