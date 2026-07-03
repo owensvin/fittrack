@@ -1955,11 +1955,12 @@ function renderBody() {
     <div class="stat-box"><div class="v">${cwaist != null ? cwaist + " cm" : "—"}</div><div class="k">current waist</div></div>
     <div class="stat-box"><div class="v">${waistDelta != null ? (waistDelta <= 0 ? "" : "+") + waistDelta + " cm" : "—"}</div><div class="k">waist change</div></div>`;
   renderIcons($("#bodySummary"));
-  const todayW = state.weights.filter((w) => w.d === todayKey()).reverse();
-  $("#weightList").innerHTML = todayW.length
-    ? todayW.map((w) =>
-      `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${w.ts ? fmtTime(w.ts) : "today"}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")
-    : `<li class="muted" style="border-top:none">No weigh-in logged today — full history is on Progress.</li>`;
+  const recentCutoff = addDays(todayKey(), -1);
+  const recentW = state.weights.filter((w) => w.d >= recentCutoff).reverse();
+  $("#weightList").innerHTML = recentW.length
+    ? recentW.map((w) =>
+      `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${w.d === todayKey() ? "Today" : fmtShort(w.d)}${w.ts ? " · " + fmtTime(w.ts) : ""}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")
+    : `<li class="muted" style="border-top:none">No weigh-in in the last 2 days — full history is on Progress.</li>`;
   $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) =>
     `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
   renderIcons($("#weightList")); renderIcons($("#waistList"));
