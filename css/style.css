@@ -419,6 +419,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 
 #weekCard { cursor: pointer; }
 
+.range-nav { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 8px; }
+.range-label { font-size: var(--fs-base); font-weight: 600; font-variant-numeric: tabular-nums; }
+
 /* ===== Chart tap tooltip ===== */
 .chart-tip {
   position: fixed; z-index: 99; transform: translate(-50%, -100%);

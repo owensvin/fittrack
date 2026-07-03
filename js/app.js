@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.8";
+const APP_VERSION = "2.9";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1348,8 +1348,26 @@ function renderTraining() {
 /* ---------- Progress ---------- */
 function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); }
 
+// A goal reached at ANY point stays reached (stamped with achievedOn),
+// even if the goal's end date hasn't arrived or weight later fluctuates up.
+function checkGoals() {
+  const cw = currentWeight();
+  let hit = null;
+  for (const g of state.goals) {
+    if (!g.achievedOn && cw <= g.targetKg) { g.achievedOn = todayKey(); hit = g; }
+  }
+  if (hit) { save(); haptic(); toast(`Goal reached: ${hit.label}!`); }
+}
 function goalCard(g) {
   const p = state.profile, start = p.startWeightKg, cw = currentWeight(), tgt = g.targetKg, date = g.date;
+  if (g.achievedOn) {
+    return `<div class="goal-card">
+      <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="check"></span>${esc(g.label)}</span><span class="goal-eta">reached ${fmtShort(g.achievedOn)}</span></div>
+      <div class="goal-nums"><span class="goal-cur">${r1(tgt)}</span><span class="goal-tgt">kg — done</span></div>
+      <div class="goal-bar"><div class="goal-bar-fill" style="width:100%"></div></div>
+      <div class="goal-foot"><span class="muted">target was ${fmtShort(date)}</span><span class="goal-pace"><span class="pace-dot g"></span>Achieved</span></div>
+    </div>`;
+  }
   const lost = start - cw, need = start - tgt;
   const pct = need > 0 ? clamp(lost / need, 0, 1) : (cw <= tgt ? 1 : 0);
   const daysLeft = Math.max(0, daysBetween(todayKey(), date));
@@ -1420,7 +1438,9 @@ function renderWeightChart() {
   const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
   const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
   const nearGoal = sortedGoals[0], farGoal = sortedGoals[sortedGoals.length - 1];
-  const projDays = farGoal ? Math.max(0, daysBetween(todayKey(), farGoal.date)) : 0;
+  // Cap the projection so it can't dominate the x-axis — otherwise every
+  // range setting renders on a months-long axis and looks identical.
+  const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightRange / 2)) : 0;
   $("#weightChart").innerHTML = lineChart({ entries, ma, goal: nearGoal ? nearGoal.targetKg : null, unit: "kg", projDays });
   $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
   $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
@@ -1547,17 +1567,21 @@ function diffBarChart(points, unit) {
     <text x="${W - R}" y="${H - 6}" text-anchor="end" font-size="9" fill="var(--muted)">${fmtShort(points[points.length - 1].d)}</text>
   </svg>`;
 }
-let sumFullPeriod = 7;
+let sumFullPeriod = 7, sumFullOffset = 0; // offset = how many periods back from today
 function renderSummaryFull() {
   const days = sumFullPeriod, p = state.profile;
+  const endKey = addDays(todayKey(), -sumFullOffset * days);
+  const startKey = addDays(endKey, -(days - 1));
+  $("#sumRangeLabel").textContent = `${fmtShort(startKey)} – ${fmtShort(endKey)}`;
+  $("#sumNext").disabled = sumFullOffset === 0;
   const calPts = [], weightPts = [];
   let kcalSum = 0, kcalDays = 0;
   for (let i = days - 1; i >= 0; i--) {
-    const dk = addDays(todayKey(), -i);
+    const dk = addDays(endKey, -i);
     const t = dayTotals(dk);
     if (t.items > 0) { calPts.push({ d: dk, v: t.kcal - p.kcalTarget }); kcalSum += t.kcal; kcalDays++; }
   }
-  const inRangeW = state.weights.filter((w) => w.d >= addDays(todayKey(), -(days - 1)));
+  const inRangeW = state.weights.filter((w) => w.d >= startKey && w.d <= endKey);
   for (let i = 1; i < inRangeW.length; i++) {
     weightPts.push({ d: inRangeW[i].d, v: r1(inRangeW[i].kg - inRangeW[i - 1].kg) });
   }
@@ -1578,6 +1602,7 @@ function renderSummaryFull() {
 $("#weekCard").addEventListener("click", (e) => {
   if (e.target.closest("#summaryChips") || e.target.closest(".info-btn")) return;
   sumFullPeriod = summaryPeriod;
+  sumFullOffset = 0;
   renderSummaryFull();
   $("#summarySheet").classList.remove("hidden");
 });
@@ -1585,8 +1610,23 @@ $("#summaryFullClose").addEventListener("click", () => $("#summarySheet").classL
 $("#summarySheet").addEventListener("click", (e) => { if (e.target.id === "summarySheet") $("#summarySheet").classList.add("hidden"); });
 $("#sumFullChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  sumFullPeriod = +b.dataset.d; renderSummaryFull();
+  sumFullPeriod = +b.dataset.d; sumFullOffset = 0; renderSummaryFull();
 });
+$("#sumPrev").addEventListener("click", () => { sumFullOffset++; haptic("light"); renderSummaryFull(); });
+$("#sumNext").addEventListener("click", () => { if (sumFullOffset > 0) { sumFullOffset--; haptic("light"); renderSummaryFull(); } });
+// swipe anywhere on the sheet: right = older period, left = newer
+(function setupSummarySwipe() {
+  const panel = $("#summarySheet .sheet-panel");
+  let sx = 0, sy = 0, tracking = false;
+  panel.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true; }, { passive: true });
+  panel.addEventListener("touchend", (e) => {
+    if (!tracking) return; tracking = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx > 0) { sumFullOffset++; renderSummaryFull(); }
+    else if (sumFullOffset > 0) { sumFullOffset--; renderSummaryFull(); }
+  }, { passive: true });
+})();
 /* ---------- Body ---------- */
 function renderBody() {
   const p = state.profile, w = state.weights, ws = state.waists;
@@ -1599,8 +1639,19 @@ function renderBody() {
     <div class="stat-box"><div class="v">${wDelta != null ? (wDelta <= 0 ? "" : "+") + wDelta + " kg" : "—"}</div><div class="k">since start (${r1(p.startWeightKg)} kg)</div></div>
     <div class="stat-box"><div class="v">${cwaist != null ? cwaist + " cm" : "—"}</div><div class="k">current waist</div></div>
     <div class="stat-box"><div class="v">${waistDelta != null ? (waistDelta <= 0 ? "" : "+") + waistDelta + " cm" : "—"}</div><div class="k">waist change</div></div>`;
-  $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) => `<li><span>${w.kg} kg</span><span class="d">${fmtShort(w.d)}</span></li>`).join("");
-  $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) => `<li><span>${w.cm} cm</span><span class="d">${fmtShort(w.d)}</span></li>`).join("");
+  $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) =>
+    `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-wd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
+  $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) =>
+    `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
+  renderIcons($("#weightList")); renderIcons($("#waistList"));
+  $$("#weightList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    state.weights = state.weights.filter((w) => w.d !== b.dataset.wd);
+    save(); renderBody(); toast("Weight entry removed");
+  }));
+  $$("#waistList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    state.waists = state.waists.filter((w) => w.d !== b.dataset.cd);
+    save(); renderBody(); toast("Waist entry removed");
+  }));
   renderPhotos();
 }
 $("#weightSave").addEventListener("click", () => {
@@ -1610,6 +1661,7 @@ $("#weightSave").addEventListener("click", () => {
   state.weights = state.weights.filter((w) => w.d !== k); state.weights.push({ d: k, kg: v });
   state.weights.sort((a, b) => (a.d < b.d ? -1 : 1)); $("#weightInput").value = "";
   save(); renderBody(); toast("Weight logged");
+  checkGoals();
 });
 $("#waistSave").addEventListener("click", () => {
   const v = parseFloat($("#waistInput").value);
@@ -1825,6 +1877,7 @@ $("#resetBtn").addEventListener("click", () => {
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
 function startApp() {
   $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons(); switchView("today");
+  checkGoals();
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
 }
 
