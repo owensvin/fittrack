@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.9";
+const APP_VERSION = "2.10";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -99,6 +99,9 @@ const MEALS = [
 const EXERCISES = [
   { id: "walk", name: "Brisk walk", ic: "walk", met: 4.3 },
   { id: "powerwalk", name: "Power walk", ic: "walk", met: 5.0 },
+  { id: "inclinewalk", name: "Incline walk", ic: "walk", met: 6.0 },
+  { id: "dumbbellfull", name: "Dumbbell full-body", ic: "dumbbell", met: 6.0 },
+  { id: "kbcircuit", name: "Kettlebell circuit", ic: "dumbbell", met: 8.0 },
   { id: "run", name: "Running", ic: "run", met: 9.8 },
   { id: "cycle", name: "Cycling", ic: "bike", met: 7.5 },
   { id: "weights", name: "Weight training", ic: "dumbbell", met: 5.0 },
@@ -137,6 +140,8 @@ function loadState() {
       if (s.settings.waterEnabled === undefined) s.settings.waterEnabled = true;
       if (s.settings.reduceMotion === undefined) s.settings.reduceMotion = false;
       if (!s.settings.timer) s.settings.timer = { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10 };
+      if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
+      if (s.goals) for (const g of s.goals) { if (!g.created) g.created = (s.profile && s.profile.startDate) || todayKey(); }
       if (!s.goals || !s.goals.length) {
         s.goals = [];
         const p = s.profile;
@@ -208,9 +213,25 @@ function renderGlossary() {
     `<li data-info="${key}"><span class="row-label">${esc(GLOSSARY[key].title)}</span><span class="ic" data-ic="chevR"></span></li>`).join("");
   renderIcons($("#glossaryList"));
 }
+// The calorie target that applied on a given day — targets change over time
+// (pace switches, goal achieved), and history/adherence should be judged
+// against the target of that day, not today's.
+function targetFor(k) {
+  const h = (state.profile && state.profile.kcalTargetHistory) || [];
+  let t = state.profile.kcalTarget;
+  for (const e of h) { if (e.from <= k) t = e.kcal; else break; }
+  return t;
+}
+function recordTargetChange(kcal) {
+  const p = state.profile;
+  if (!p.kcalTargetHistory) p.kcalTargetHistory = [];
+  p.kcalTargetHistory = p.kcalTargetHistory.filter((e) => e.from !== todayKey());
+  p.kcalTargetHistory.push({ from: todayKey(), kcal });
+  p.kcalTargetHistory.sort((a, b) => (a.from < b.from ? -1 : 1));
+}
 function budgetFor(k) {
   const p = state.profile;
-  return p.kcalTarget + (p.eatBack ? dayTotals(k).active : 0);
+  return targetFor(k) + (p.eatBack ? dayTotals(k).active : 0);
 }
 
 function movingAvg(entries, w = 7) {
@@ -311,9 +332,10 @@ function obFinish() {
     kcalTarget: Math.max(t - ob.deficit, kcalFloor(ob.sex)),
     proteinTarget: r0(w * 1.6), waterTargetMl: 2500, moveTarget: 200, eatBack: false,
   };
+  state.profile.kcalTargetHistory = [{ from: todayKey(), kcal: state.profile.kcalTarget }];
   state.goals = [
-    { id: "g" + Date.now(), label: "Short-term", targetKg: parseFloat($("#obSprintW").value), date: $("#obSprintD").value },
-    { id: "g" + (Date.now() + 1), label: "Long-term", targetKg: parseFloat($("#obLongW").value), date: $("#obLongD").value },
+    { id: "g" + Date.now(), label: "Short-term", targetKg: parseFloat($("#obSprintW").value), date: $("#obSprintD").value, created: todayKey() },
+    { id: "g" + (Date.now() + 1), label: "Long-term", targetKg: parseFloat($("#obLongW").value), date: $("#obLongD").value, created: todayKey() },
   ];
   state.weights.push({ d: todayKey(), kg: w });
   if (ob.supplements.length) state.supplements = ob.supplements;
@@ -426,7 +448,8 @@ function renderToday() {
   renderStats(k);
 
   const s = streak();
-  $("#streakLine").textContent = s > 0 ? `${s}-day on-target streak` : "Log today to start a streak";
+  $("#streakLine").textContent = s > 0 ? `${s}-day streak` : "No streak yet — log today";
+  $("#streakPill").classList.toggle("lit", s > 0);
 
   const prev = state.logs[addDays(k, -1)];
   const prevHasMeals = !!prev && MEALS.some((m) => (prev.meals[m.id] || []).length);
@@ -598,14 +621,16 @@ function timeToTs(dateKey, timeStr) {
 
 /* ---------- exercise picker ---------- */
 let exSel = null;
-$("#exerciseAddBtn").addEventListener("click", () => {
+function openExercisePicker() {
   $("#exerciseListPicker").innerHTML = EXERCISES.map((e, i) =>
     `<button class="food-row" data-i="${i}"><span class="ic fr-ic" data-ic="${e.ic}"></span>
      <div class="fr-main"><div class="fr-name">${e.name}</div><div class="fr-sub">${r0(e.met * currentWeight() * 0.5)} kcal / 30 min</div></div></button>`).join("");
   renderIcons($("#exerciseListPicker"));
   $$("#exerciseListPicker .food-row").forEach((el) => el.addEventListener("click", () => openExDetail(EXERCISES[+el.dataset.i])));
   $("#exerciseSheet").classList.remove("hidden");
-});
+}
+$("#exerciseAddBtn").addEventListener("click", openExercisePicker);
+$("#trainExerciseAddBtn").addEventListener("click", openExercisePicker);
 $("#exerciseClose").addEventListener("click", () => $("#exerciseSheet").classList.add("hidden"));
 $("#exerciseSheet").addEventListener("click", (e) => { if (e.target.id === "exerciseSheet") $("#exerciseSheet").classList.add("hidden"); });
 function exKcal(mins) { return exSel.met * currentWeight() * (mins / 60); }
@@ -636,7 +661,7 @@ $("#exAdd").addEventListener("click", () => {
   dayLog(viewDate).walks.push({ name: exSel.name, ic: exSel.ic, mins, kcal: exKcal(mins) });
   save();
   $("#exDetailSheet").classList.add("hidden"); $("#exerciseSheet").classList.add("hidden");
-  renderToday(); toast(`Logged ${exSel.name}`);
+  renderToday(); renderTraining(); toast(`Logged ${exSel.name}`);
 });
 
 /* ---------- food sheet ---------- */
@@ -937,7 +962,21 @@ $("#quickSave").addEventListener("click", () => {
     save(); renderToday(); $("#quickSheet").classList.add("hidden"); toast("Updated");
   } else {
     const ts = timeToTs(viewDate, $("#qTime").value);
-    addFoodItem({ ...food, qtyLabel: quickMode === "ai" && aiServingG ? `${aiServingG} g` : "", ts }, null);
+    let src = null;
+    if (quickMode === "ai") {
+      // AI estimates are dictated/photographed custom foods: save (or refresh)
+      // them in the custom list so they show up in recents and quick chips.
+      const serving = aiServingG ? `${aiServingG} g` : "1 serving";
+      const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
+      if (existing) {
+        Object.assign(existing, { serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
+        src = existing;
+      } else {
+        src = { id: "c" + Date.now(), name: food.name, serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f };
+        state.customFoods.unshift(src);
+      }
+    }
+    addFoodItem({ ...food, qtyLabel: quickMode === "ai" && aiServingG ? `${aiServingG} g` : "", ts }, src);
     $("#quickSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
   }
 });
@@ -1284,6 +1323,9 @@ function finishTimer() {
     : `${tmr.amrapCount} rounds in ${tmr.total / 60} min`;
   $("#toPause").classList.add("hidden");
   $("#toRoundBtn").classList.add("hidden");
+  $("#toName").value = "";
+  $("#toName").placeholder = tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60}min (${tmr.amrapCount} rounds)`;
+  $("#toName").classList.remove("hidden");
   $("#toLog").classList.remove("hidden");
   beep(980, 0.3); setTimeout(() => beep(1180, 0.4), 250); haptic();
 }
@@ -1316,7 +1358,10 @@ $("#toEnd").addEventListener("click", () => {
 $("#toLog").addEventListener("click", () => {
   const mins = r0(tmr.total / 60);
   const kcal = 8 * currentWeight() * (tmr.total / 3600); // kettlebell circuit ≈ MET 8
-  const name = tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60}min (${tmr.amrapCount} rounds)`;
+  const defaultName = tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60}min (${tmr.amrapCount} rounds)`;
+  const custom = $("#toName").value.trim();
+  // keep the EMOM/AMRAP prefix so Recent sessions still recognizes it
+  const name = custom ? `${tmr.mode === "emom" ? "EMOM" : "AMRAP"} · ${custom}` : defaultName;
   dayLog(todayKey()).walks.push({ name, ic: "dumbbell", mins, kcal });
   save(); haptic();
   closeTimer(); toast(`Logged ${name} · ${r0(kcal)} kcal`);
@@ -1327,9 +1372,23 @@ function closeTimer() {
   clearInterval(tmrInt); tmr = null;
   const o = $("#timerOverlay");
   o.classList.add("hidden"); o.classList.remove("work", "warn", "done");
+  $("#toName").classList.add("hidden");
 }
 function renderTraining() {
   syncTimerUI();
+  const log = dayLog(todayKey()), walks = log.walks || [];
+  $("#trainExerciseList").innerHTML = walks.map((w, i) =>
+    `<li><span class="ic" data-ic="${w.ic || "walk"}"></span><span class="fi-name">${esc(w.name)} <span class="fi-qty">${w.mins} min</span></span>
+     <span class="fi-kcal">−${r0(w.kcal)}</span>
+     <button class="fi-del" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("");
+  renderIcons($("#trainExerciseList"));
+  const total = walks.reduce((s, w) => s + w.kcal, 0);
+  $("#trainExerciseSummary").textContent = walks.length
+    ? `${walks.length} ${walks.length === 1 ? "activity" : "activities"} · ${r0(total)} kcal burned`
+    : "Nothing logged today yet.";
+  $$("#trainExerciseList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    log.walks.splice(+b.dataset.i, 1); save(); renderTraining();
+  }));
   const sessions = [];
   for (let i = 0; i < 14; i++) {
     const dk = addDays(todayKey(), -i), l = state.logs[dk];
@@ -1381,10 +1440,18 @@ function goalCard(g) {
     else if (diff <= 1.2) { dot = "y"; pace = "Close — push a bit"; }
     else { dot = "r"; pace = `Behind (proj ${r1(proj)}kg)`; }
   }
+  // time bar: how much of the goal window has elapsed (grey, red near the end)
+  const windowDays = Math.max(1, daysBetween(g.created || p.startDate, date));
+  const elapsedFrac = clamp(daysBetween(g.created || p.startDate, todayKey()) / windowDays, 0, 1);
+  const urgent = elapsedFrac >= 0.85 || daysLeft <= 7;
   return `<div class="goal-card">
     <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="target"></span>${esc(g.label)}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
     <div class="goal-nums"><span class="goal-cur">${r1(cw)}</span><span class="goal-arrow">→</span><span class="goal-tgt">${r1(tgt)} kg</span></div>
     <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div></div>
+    <div class="goal-time-row">
+      <div class="goal-time-bar"><div class="goal-time-fill ${urgent ? "urgent" : ""}" style="width:${elapsedFrac * 100}%"></div></div>
+      <span class="goal-time-label ${urgent ? "urgent" : ""}">${daysLeft}d left</span>
+    </div>
     <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost</span><span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span></div>
   </div>`;
 }
@@ -1395,7 +1462,7 @@ function renderGoalCards() {
   renderIcons($("#goalCards"));
 }
 
-function lineChart({ entries, ma, goal, unit, projDays }) {
+function lineChart({ entries, ma, goals, unit, projDays }) {
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
   const x0 = entries[0].d;
@@ -1407,17 +1474,21 @@ function lineChart({ entries, ma, goal, unit, projDays }) {
     xMax = Math.max(xMax, proj.x2);
   }
   xMax = Math.max(xMax, 1);
-  let vals = entries.map((e) => e.kg).concat(ma.map((m) => m.v));
-  if (goal != null) vals.push(goal);
+  const gls = goals || [];
+  let vals = entries.map((e) => e.kg).concat(ma.map((m) => m.v)).concat(gls.map((g) => g.v));
   if (proj) vals.push(proj.v2);
   let vMin = Math.min(...vals), vMax = Math.max(...vals);
   const pad = Math.max(0.5, (vMax - vMin) * 0.15); vMin -= pad; vMax += pad;
   const X = (d) => L + (daysBetween(x0, d) / xMax) * (W - L - R);
   const Xn = (n) => L + (n / xMax) * (W - L - R);
   const Y = (v) => T + (1 - (v - vMin) / (vMax - vMin)) * (H - T - B);
-  const dots = entries.map((e) => `<circle cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)"/>`).join("");
+  const dots = entries.map((e) =>
+    `<circle data-tip="${fmtShort(e.d)} · ${r1(e.kg)} ${unit}" cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)" stroke="transparent" stroke-width="14"/>`).join("");
   const maPath = ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("");
-  const goalLine = goal != null ? `<line x1="${L}" y1="${Y(goal).toFixed(1)}" x2="${W - R}" y2="${Y(goal).toFixed(1)}" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="5 4" opacity=".8"/><text x="${W - R}" y="${(Y(goal) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--amber)">${r1(goal)} ${unit}</text>` : "";
+  const goalLines = gls.map((g) => {
+    const color = g.achieved ? "var(--accent)" : "var(--amber)";
+    return `<line x1="${L}" y1="${Y(g.v).toFixed(1)}" x2="${W - R}" y2="${Y(g.v).toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 4" opacity="${g.achieved ? ".55" : ".8"}"/><text x="${W - R}" y="${(Y(g.v) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${color}">${g.achieved ? "✓ " : ""}${r1(g.v)} ${unit}</text>`;
+  }).join("");
   const projLine = proj ? `<line x1="${Xn(proj.x1).toFixed(1)}" y1="${Y(proj.v1).toFixed(1)}" x2="${Xn(proj.x2).toFixed(1)}" y2="${Y(proj.v2).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="2 4" opacity=".7"/>` : "";
   const first = entries[0], last = entries[entries.length - 1];
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -1426,7 +1497,7 @@ function lineChart({ entries, ma, goal, unit, projDays }) {
     <text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>
     <text x="${L - 4}" y="${(Y(vMax - pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMax - pad)}</text>
     <text x="${L - 4}" y="${(Y(vMin + pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMin + pad)}</text>
-    ${goalLine}${dots}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}</svg>`;
+    ${goalLines}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
 }
 function inRange(entries, days) {
   const from = addDays(todayKey(), -(days - 1));
@@ -1437,11 +1508,13 @@ function renderWeightChart() {
   const fullMa = movingAvg(state.weights);
   const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
   const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const nearGoal = sortedGoals[0], farGoal = sortedGoals[sortedGoals.length - 1];
+  const farGoal = sortedGoals[sortedGoals.length - 1];
   // Cap the projection so it can't dominate the x-axis — otherwise every
   // range setting renders on a months-long axis and looks identical.
   const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightRange / 2)) : 0;
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goal: nearGoal ? nearGoal.targetKg : null, unit: "kg", projDays });
+  // Every goal stays on the chart, achieved ones included (dimmer, with a check).
+  const goalLines = sortedGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays });
   $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
   $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
 }
@@ -1452,20 +1525,28 @@ $("#weightRangeChips").addEventListener("click", (e) => {
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
   const entries = inRange(allEntries, weightRange), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
-  $("#waistChart").innerHTML = lineChart({ entries, ma, goal: null, unit: "cm", projDays: 0 });
+  $("#waistChart").innerHTML = lineChart({ entries, ma, goals: [], unit: "cm", projDays: 0 });
   $("#waistDelta").textContent = state.waists.length >= 2 ? `${(state.waists[state.waists.length - 1].cm - state.waists[0].cm) <= 0 ? "" : "+"}${r1(state.waists[state.waists.length - 1].cm - state.waists[0].cm)} cm since start` : "measure weekly to track belly progress";
 }
 function renderCalChart() {
-  const W = 340, H = 150, L = 34, R = 8, T = 12, B = 22, p = state.profile;
+  const W = 340, H = 150, L = 34, R = 8, T = 12, B = 22;
   const n = calRange;
   const days = []; for (let i = n - 1; i >= 0; i--) days.push(addDays(todayKey(), -i));
   const vals = days.map((d) => dayTotals(d).kcal);
-  const max = Math.max(p.kcalTarget * 1.25, ...vals, 1), bw = (W - L - R) / n;
+  // Each day is judged against — and the line drawn from — the target that
+  // applied on that day, so old targets remain visible history.
+  const targets = days.map((d) => targetFor(d));
+  const max = Math.max(...targets.map((t) => t * 1.25), ...vals, 1), bw = (W - L - R) / n;
   const rx = Math.min(3, bw / 3.5);
   const Y = (v) => T + (1 - v / max) * (H - T - B);
   const gap = Math.min(4, bw * 0.15);
-  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > p.kcalTarget; return `<rect data-tip="${fmtShort(d)} · ${r0(v)} kcal" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
-  $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/><line x1="${L}" y1="${Y(p.kcalTarget).toFixed(1)}" x2="${W - R}" y2="${Y(p.kcalTarget).toFixed(1)}" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".4"/><text x="${W - R}" y="${(Y(p.kcalTarget) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${p.kcalTarget}</text>${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
+  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > targets[i]; return `<rect data-tip="${fmtShort(d)} · ${r0(v)} / ${targets[i]} kcal" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
+  let targetPath = "";
+  for (let i = 0; i < n; i++) {
+    const x0 = L + i * bw, x1 = L + (i + 1) * bw, y = Y(targets[i]).toFixed(1);
+    targetPath += `${i === 0 ? `M${x0.toFixed(1)},${y}` : `L${x0.toFixed(1)},${y}`} L${x1.toFixed(1)},${y} `;
+  }
+  $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>${bars}<path d="${targetPath}" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".45"/><text x="${W - R}" y="${(Y(targets[n - 1]) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${targets[n - 1]}</text><text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
   $$("#calRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === calRange));
 }
 $("#calRangeChips").addEventListener("click", (e) => {
@@ -1798,7 +1879,7 @@ $("#suppAddBtn").addEventListener("click", () => {
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile, kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
   if (kcal && kcal < floor) { toast(`Minimum safe target: ${floor} kcal`); $("#setKcal").value = floor; return; }
-  if (kcal) p.kcalTarget = kcal;
+  if (kcal && kcal !== p.kcalTarget) { p.kcalTarget = kcal; recordTargetChange(kcal); }
   p.proteinTarget = parseInt($("#setProtein").value, 10) || p.proteinTarget;
   p.waterTargetMl = parseInt($("#setWater").value, 10) || p.waterTargetMl;
   p.moveTarget = parseInt($("#setMove").value, 10) || p.moveTarget;
@@ -1843,7 +1924,7 @@ $("#goalAddBtn").addEventListener("click", () => {
     if (g) { g.label = label; g.targetKg = targetKg; g.date = date; }
     toast("Goal updated");
   } else {
-    state.goals.push({ id: "g" + Date.now(), label, targetKg, date });
+    state.goals.push({ id: "g" + Date.now(), label, targetKg, date, created: todayKey() });
     toast("Goal added");
   }
   resetGoalForm(); save(); renderGoalSettings();

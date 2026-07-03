@@ -208,7 +208,15 @@ textarea { resize: none; line-height: 1.5; }
 .info-btn { display: inline-flex; vertical-align: -3px; border: none; background: none; padding: 0; margin-left: 4px; color: var(--muted2); cursor: pointer; }
 .info-btn .ic { width: 15px; height: 15px; }
 
-.streak-line { font-size: var(--fs-sm); color: var(--muted); padding: 0 2px 14px; }
+.streak-row { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 2px 14px; }
+.streak-pill {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px;
+  background: var(--card2); border: 1px solid var(--border); border-radius: var(--r-full);
+  font-size: var(--fs-sm); font-weight: 700; color: var(--muted);
+}
+.streak-pill .ic { width: 15px; height: 15px; color: var(--muted2); }
+.streak-pill.lit { color: var(--text); border-color: rgba(232, 163, 61, 0.4); }
+.streak-pill.lit .ic { color: var(--amber); }
 
 /* ===== Quick log ===== */
 .quick-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
@@ -279,6 +287,12 @@ textarea { resize: none; line-height: 1.5; }
 .goal-tgt { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
 .goal-bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
 .goal-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.4s var(--ease); }
+.goal-time-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.goal-time-bar { flex: 1; height: 4px; background: var(--track); border-radius: 2px; overflow: hidden; }
+.goal-time-fill { height: 100%; border-radius: 2px; background: var(--muted2); transition: width var(--t-med); }
+.goal-time-fill.urgent { background: var(--red); }
+.goal-time-label { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.goal-time-label.urgent { color: var(--red); font-weight: 700; }
 .goal-foot { display: flex; justify-content: space-between; font-size: var(--fs-xs); }
 .goal-pace { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 

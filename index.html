@@ -112,7 +112,10 @@
         <div class="rings-wrap" id="ringsWrap"></div>
       </section>
       <div class="ring-legend" id="ringLegend"></div>
-      <p class="streak-line"><span id="streakLine"></span><button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></p>
+      <div class="streak-row">
+        <div class="streak-pill" id="streakPill"><span class="ic" data-ic="flame"></span><span id="streakLine"></span></div>
+        <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button>
+      </div>
 
       <!-- One-tap quick log -->
       <section class="card quick-card" id="quickCard">
@@ -236,6 +239,14 @@
         </div>
         <p class="muted" id="timerHint" style="margin-top:6px">EMOM: start a new set every interval — rest with whatever time is left.</p>
         <button class="btn primary full" id="timerStart">Start</button>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <h3><span class="ic t-green" data-ic="pulse"></span>Today's activity</h3>
+          <button class="add-btn" id="trainExerciseAddBtn"><span class="ic" data-ic="plus"></span></button>
+        </div>
+        <ul class="meal-items" id="trainExerciseList"></ul>
+        <p class="muted" id="trainExerciseSummary"></p>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-amber" data-ic="dumbbell"></span>Recent sessions</h3></div>
@@ -604,6 +615,7 @@
       <button class="btn ghost" id="toPause">Pause</button>
       <button class="btn danger" id="toEnd">End</button>
     </div>
+    <input type="text" id="toName" class="hidden" style="max-width:280px;text-align:center" placeholder="Name this session (optional)">
     <button class="btn primary hidden" id="toLog">Log session</button>
   </div>
 
