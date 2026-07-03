@@ -100,7 +100,7 @@
     <main id="view-today" class="view">
       <header class="day-header">
         <button class="day-nav" id="dayPrev"><span class="ic" data-ic="chevL"></span></button>
-        <div class="day-title">
+        <div class="day-title" id="dayTitleBtn">
           <h1 id="dayLabel">Today</h1>
           <span id="daySub" class="day-sub"></span>
         </div>
@@ -114,6 +114,7 @@
       <div class="ring-legend" id="ringLegend"></div>
       <div class="streak-row">
         <div class="streak-pill" id="streakPill"><span class="ic" data-ic="flame"></span><span id="streakLine"></span></div>
+        <div class="streak-pill" id="targetStreakPill"><span class="ic" data-ic="target"></span><span id="targetStreakLine"></span></div>
         <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button>
       </div>
 
@@ -197,6 +198,8 @@
         </div>
         <div id="calChart" class="chart"></div>
       </section>
+      <h2 class="section-label hidden" id="achievedLabel">Achieved goals</h2>
+      <section id="achievedGoalCards"></section>
       <div class="bottom-space"></div>
     </main>
 
@@ -237,6 +240,9 @@
             <button data-m="20">20</button>
           </div>
         </div>
+        <label class="field-label">Program (optional) <button class="info-btn" data-info="program"><span class="ic" data-ic="info"></span></button></label>
+        <textarea id="timerProgram" rows="4" placeholder="One move per line, cycles round to round, e.g.&#10;Kettlebell swings&#10;Goblet squats&#10;Push press&#10;Rest"></textarea>
+        <p class="muted" id="programPreview" style="margin:6px 0 2px"></p>
         <p class="muted" id="timerHint" style="margin-top:6px">EMOM: start a new set every interval — rest with whatever time is left.</p>
         <button class="btn primary full" id="timerStart">Start</button>
       </section>
@@ -261,6 +267,7 @@
       <section class="card" id="bodySummaryCard">
         <div class="card-head"><h3>At a glance</h3></div>
         <div class="stat-grid" id="bodySummary"></div>
+        <button class="btn ghost full" id="calcOpenBtn" style="margin-top:12px">How your numbers are calculated</button>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="scale"></span>Weight</h3></div>
@@ -291,64 +298,75 @@
     <main id="view-settings" class="view hidden">
       <header class="page-header"><h1>Settings</h1></header>
       <section class="card">
-        <div class="card-head"><h3>Targets</h3></div>
-        <p class="muted" style="margin-bottom:10px">How fast you want to lose weight, and what that means for your daily numbers.</p>
-        <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
-        <div class="option-list" id="paceTiers"></div>
-        <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
-        <div class="form-grid">
-          <label>Calorie target <input type="number" id="setKcal" inputmode="numeric"></label>
-          <label>Protein target (g) <input type="number" id="setProtein" inputmode="numeric"></label>
-          <label>Water target (ml) <input type="number" id="setWater" inputmode="numeric"></label>
-          <label>Active-calorie goal <input type="number" id="setMove" inputmode="numeric"></label>
-          <label>Activity
-            <select id="setActivity">
-              <option value="1.2">Sedentary</option>
-              <option value="1.375">Lightly active</option>
-              <option value="1.55">Active</option>
-              <option value="1.725">Very active</option>
-            </select>
-          </label>
+        <div class="card-head"><h3>Targets</h3><button class="btn small" id="targetsEditBtn">Edit</button></div>
+        <div id="targetsSummary" class="targets-summary"></div>
+        <div id="targetsForm" class="hidden">
+          <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
+          <div class="option-list" id="paceTiers"></div>
+          <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
+          <div class="form-grid">
+            <label>Calorie target <input type="number" id="setKcal" inputmode="numeric"></label>
+            <label>Protein target (g) <input type="number" id="setProtein" inputmode="numeric"></label>
+            <label>Water target (ml) <input type="number" id="setWater" inputmode="numeric"></label>
+            <label>Active-calorie goal <input type="number" id="setMove" inputmode="numeric"></label>
+            <label>Activity
+              <select id="setActivity">
+                <option value="1.2">Sedentary</option>
+                <option value="1.375">Lightly active</option>
+                <option value="1.55">Active</option>
+                <option value="1.725">Very active</option>
+              </select>
+            </label>
+          </div>
+          <div class="switch-row">
+            <div><div class="switch-title">Add exercise calories to budget</div><div class="muted">Off is better for steady fat loss</div></div>
+            <label class="switch"><input type="checkbox" id="setEatBack"><span class="knob"></span></label>
+          </div>
+          <div class="switch-row">
+            <div><div class="switch-title">Track water</div><div class="muted">Shows the water card on Today</div></div>
+            <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
+          </div>
+          <button class="btn primary full" id="settingsSave">Save</button>
         </div>
-        <div class="switch-row">
-          <div><div class="switch-title">Add exercise calories to budget</div><div class="muted">Off is better for steady fat loss</div></div>
-          <label class="switch"><input type="checkbox" id="setEatBack"><span class="knob"></span></label>
-        </div>
-        <div class="switch-row">
-          <div><div class="switch-title">Track water</div><div class="muted">Shows the water card on Today</div></div>
-          <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
-        </div>
-        <button class="btn primary full" id="settingsSave">Save</button>
         <p class="muted center" id="settingsInfo"></p>
       </section>
       <section class="card">
-        <div class="card-head"><h3>Goals</h3></div>
-        <p class="muted" style="margin-bottom:10px">Any number of weight goals, each with its own label and date.</p>
+        <div class="card-head"><h3>Goals</h3><button class="btn small" id="goalNewBtn">Add</button></div>
         <ul id="goalSettingsList" class="entry-list"></ul>
-        <div class="form-grid" style="margin-top:12px">
-          <label>Label <input type="text" id="goalLabel" placeholder="e.g. Summer trip"></label>
-          <label>Target weight (kg) <input type="number" id="goalTargetKg" step="0.1" inputmode="decimal"></label>
-          <label>By <input type="date" id="goalDate"></label>
+        <div id="goalForm" class="hidden">
+          <div class="form-grid" style="margin-top:12px">
+            <label>Label <input type="text" id="goalLabel" placeholder="e.g. Summer trip"></label>
+            <label>Target weight (kg) <input type="number" id="goalTargetKg" step="0.1" inputmode="decimal"></label>
+            <label>By <input type="date" id="goalDate"></label>
+          </div>
+          <button class="btn primary full" id="goalAddBtn">Save goal</button>
+          <button class="btn ghost full" id="goalCancelBtn">Cancel</button>
         </div>
-        <button class="btn primary full" id="goalAddBtn">Add goal</button>
       </section>
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3></div>
+        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><button class="btn small" id="suppNewBtn">Add</button></div>
         <ul id="suppSettingsList" class="entry-list"></ul>
-        <div class="form-grid" style="margin-top:12px">
-          <label>Name <input type="text" id="suppName" placeholder="e.g. Vitamin D3"></label>
-          <label>Note (optional) <input type="text" id="suppNote" placeholder="e.g. with breakfast"></label>
+        <div id="suppForm" class="hidden">
+          <div class="form-grid" style="margin-top:12px">
+            <label>Name <input type="text" id="suppName" placeholder="e.g. Vitamin D3"></label>
+            <label>Note (optional) <input type="text" id="suppNote" placeholder="e.g. with breakfast"></label>
+          </div>
+          <button class="btn primary full" id="suppAddBtn">Save supplement</button>
+          <button class="btn ghost full" id="suppCancelBtn">Cancel</button>
         </div>
-        <button class="btn primary full" id="suppAddBtn">Add supplement</button>
       </section>
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-blue" data-ic="bell"></span>Daily reminder</h3></div>
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="bell"></span>Notifications</h3></div>
         <div class="switch-row">
           <div><div class="switch-title">Remind me to log</div><div class="muted">A daily local notification if you haven't logged anything yet</div></div>
           <label class="switch"><input type="checkbox" id="setReminder"><span class="knob"></span></label>
         </div>
         <label class="field-label" for="setReminderTime">Time</label>
         <input type="time" id="setReminderTime" value="19:00">
+        <div class="switch-row">
+          <div><div class="switch-title">Weekly review</div><div class="muted">Sunday 6 pm — your week's adherence, deficit and weight trend</div></div>
+          <label class="switch"><input type="checkbox" id="setWeekly"><span class="knob"></span></label>
+        </div>
         <p class="muted center" id="reminderInfo" style="margin-top:10px"></p>
       </section>
       <section class="card">
@@ -608,6 +626,7 @@
   <!-- ===== Full-screen workout timer ===== -->
   <div id="timerOverlay" class="timer-overlay hidden">
     <div class="to-mode" id="toMode">EMOM</div>
+    <div class="to-exercise hidden" id="toExercise"></div>
     <div class="to-time" id="toTime">1:00</div>
     <div class="to-sub" id="toSub"></div>
     <button class="btn to-round-btn hidden" id="toRoundBtn">+1 round</button>
@@ -617,6 +636,34 @@
     </div>
     <input type="text" id="toName" class="hidden" style="max-width:280px;text-align:center" placeholder="Name this session (optional)">
     <button class="btn primary hidden" id="toLog">Log session</button>
+  </div>
+
+  <!-- ===== Month calendar ===== -->
+  <div id="calSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="calTitle">Calendar</h2>
+        <button class="sheet-close" id="calClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="cal-nav">
+        <button class="day-nav" id="calPrev"><span class="ic" data-ic="chevL"></span></button>
+        <span id="calMonthLabel" class="cal-month"></span>
+        <button class="day-nav" id="calNext"><span class="ic" data-ic="chevR"></span></button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <p class="legend" style="justify-content:center"><span class="lg dot-ma">on target</span><span class="lg dot-goal">logged, over</span></p>
+    </div>
+  </div>
+
+  <!-- ===== How numbers are calculated ===== -->
+  <div id="calcSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2>Your numbers, explained</h2>
+        <button class="sheet-close" id="calcClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" id="calcBody"></div>
+    </div>
   </div>
 
   <!-- ===== Summary detail ===== -->

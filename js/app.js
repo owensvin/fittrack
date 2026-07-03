@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.10";
+const APP_VERSION = "2.11";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -127,7 +127,7 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     supplements: defaultSupplements(),
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, waterEnabled: true, reduceMotion: false, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10 } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -139,7 +139,9 @@ function loadState() {
       if (!s.settings.reminder) s.settings.reminder = { enabled: false, time: "19:00" };
       if (s.settings.waterEnabled === undefined) s.settings.waterEnabled = true;
       if (s.settings.reduceMotion === undefined) s.settings.reduceMotion = false;
-      if (!s.settings.timer) s.settings.timer = { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10 };
+      if (!s.settings.timer) s.settings.timer = { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] };
+      if (!s.settings.timer.program) s.settings.timer.program = [];
+      if (!s.settings.weeklyReview) s.settings.weeklyReview = { enabled: false };
       if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
       if (s.goals) for (const g of s.goals) { if (!g.created) g.created = (s.profile && s.profile.startDate) || todayKey(); }
       if (!s.goals || !s.goals.length) {
@@ -194,7 +196,8 @@ const GLOSSARY = {
   deficit: { title: "Deficit & pace", body: "Eating fewer calories than your TDEE (a \"deficit\") is what causes weight loss. A bigger deficit loses weight faster but is harder to sustain and risks losing muscle. The Pace presets trade this off for you — Sustainable is gentlest, Very-low is most aggressive and not generally recommended." },
   protein: { title: "Protein target", body: "Set as grams per kilogram of bodyweight (roughly 1.9–2.0 g/kg here). Eating enough protein while in a calorie deficit helps preserve muscle instead of losing it along with fat." },
   macros: { title: "Macros", body: "Protein builds/preserves muscle (4 kcal/g). Fat supports hormones and vitamin absorption (9 kcal/g). Carbs are your main energy source, especially for workouts (4 kcal/g). Calories are the total energy from all three combined." },
-  streak: { title: "Streak & adherence", body: "Your streak counts consecutive days you logged food and stayed within your calorie budget. Adherence % is simply the days you logged divided by the days in that period — it doesn't require hitting your target, just showing up." },
+  program: { title: "EMOM program", body: "List one move per line (e.g. Swings / Goblet squats / Push press / Rest) and it cycles round to round — round 1 is line 1, round 2 is line 2, and it wraps back to line 1 after the list ends. A 4-move list on a 12-round EMOM repeats the circuit 3 times. Leave it blank to just see a plain round counter. This only drives EMOM, since AMRAP's rounds aren't tied to fixed minutes — there it's shown as a fixed circuit to repeat." },
+  streak: { title: "Streak & adherence", body: "There are two streaks: the flame is your logging streak — consecutive days you logged anything at all. The target icon is your on-target streak — consecutive days you also stayed under your calorie budget. Missing your target doesn't break the logging streak, and vice versa. Adherence % (in the Summary) is just days logged ÷ days in that period — it only needs you to show up, not hit target." },
 };
 function openInfo(key) {
   const g = GLOSSARY[key]; if (!g) return;
@@ -422,14 +425,21 @@ function renderStats(k) {
   ].map((x) => `<div class="rl-item"><span class="rl-dot" style="background:${x.c}"></span><span class="rl-val">${x.val}</span><span class="rl-lab">${x.lab}</span></div>`).join("");
 }
 
-/* ---------- streak ---------- */
+/* ---------- streaks ----------
+   Two different things people mean by "streak": did you show up and log
+   (loggingStreak), and did you also land under your calorie target
+   (targetStreak). They're tracked and shown separately. */
+function loggedDay(k) { return dayTotals(k).items > 0; }
 function dayComplete(k) { const t = dayTotals(k); return t.items > 0 && t.kcal <= budgetFor(k); }
-function streak() {
+function runStreak(testFn) {
   let s = 0, k = todayKey();
-  if (!dayComplete(k)) k = addDays(k, -1);
-  while (dayComplete(k)) { s++; k = addDays(k, -1); }
+  if (!testFn(k)) k = addDays(k, -1);
+  while (testFn(k)) { s++; k = addDays(k, -1); }
   return s;
 }
+function loggingStreak() { return runStreak(loggedDay); }
+function targetStreak() { return runStreak(dayComplete); }
+function streak() { return targetStreak(); } // kept for the Summary stat grid
 
 /* ---------- Today ---------- */
 function defaultMealForNow() {
@@ -447,9 +457,11 @@ function renderToday() {
 
   renderStats(k);
 
-  const s = streak();
-  $("#streakLine").textContent = s > 0 ? `${s}-day streak` : "No streak yet — log today";
-  $("#streakPill").classList.toggle("lit", s > 0);
+  const ls = loggingStreak(), ts = targetStreak();
+  $("#streakLine").textContent = ls > 0 ? `${ls}-day logging` : "No logging streak";
+  $("#streakPill").classList.toggle("lit", ls > 0);
+  $("#targetStreakLine").textContent = ts > 0 ? `${ts}-day on target` : "No target streak";
+  $("#targetStreakPill").classList.toggle("lit", ts > 0);
 
   const prev = state.logs[addDays(k, -1)];
   const prevHasMeals = !!prev && MEALS.some((m) => (prev.meals[m.id] || []).length);
@@ -584,6 +596,45 @@ $("#waterPlus").addEventListener("click", () => { const l = dayLog(viewDate); l.
 $("#waterMinus").addEventListener("click", () => { const l = dayLog(viewDate); l.waterMl = Math.max(0, (l.waterMl || 0) - 250); save(); renderToday(); });
 $("#dayPrev").addEventListener("click", () => { viewDate = addDays(viewDate, -1); renderToday(); });
 $("#dayNext").addEventListener("click", () => { if (viewDate < todayKey()) { viewDate = addDays(viewDate, 1); renderToday(); } });
+
+/* ---------- month calendar ---------- */
+let calMonth = new Date();
+function openCalendar() {
+  calMonth = fromKey(viewDate);
+  calMonth.setDate(1);
+  renderCalendar();
+  $("#calSheet").classList.remove("hidden");
+}
+$("#dayTitleBtn").addEventListener("click", openCalendar);
+$("#calClose").addEventListener("click", () => $("#calSheet").classList.add("hidden"));
+$("#calSheet").addEventListener("click", (e) => { if (e.target.id === "calSheet") $("#calSheet").classList.add("hidden"); });
+$("#calPrev").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
+$("#calNext").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
+function renderCalendar() {
+  $("#calMonthLabel").textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const year = calMonth.getFullYear(), month = calMonth.getMonth();
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayK = todayKey();
+  let html = ["S", "M", "T", "W", "T", "F", "S"].map((d) => `<div class="cal-dow">${d}</div>`).join("");
+  for (let i = 0; i < firstDow; i++) html += `<div class="cal-cell empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dk = toKey(new Date(year, month, d));
+    const isLogged = loggedDay(dk);
+    const onTarget = isLogged && dayComplete(dk);
+    const dot = !isLogged ? "" : `<span class="cal-dot ${onTarget ? "on" : "over"}"></span>`;
+    const isToday = dk === todayK, future = dk > todayK;
+    html += `<button class="cal-cell${isToday ? " today" : ""}${future ? " future" : ""}" data-d="${dk}" ${future ? "disabled" : ""}>
+      <span class="cal-daynum">${d}</span>${dot}
+    </button>`;
+  }
+  $("#calGrid").innerHTML = html;
+  $$("#calGrid .cal-cell[data-d]").forEach((el) => el.addEventListener("click", () => {
+    viewDate = el.dataset.d;
+    renderToday();
+    $("#calSheet").classList.add("hidden");
+  }));
+}
 
 /* ---------- since last meal (auto, from logged meal times) ---------- */
 function lastMealTs() {
@@ -1193,10 +1244,11 @@ function resumeScan(instance) {
 
 /* ---------- Training: EMOM / AMRAP timer ---------- */
 let timerMode = state.settings.timer.mode, emomInt = state.settings.timer.emomInt,
-    emomRounds = state.settings.timer.emomRounds, amrapMins = state.settings.timer.amrapMins;
+    emomRounds = state.settings.timer.emomRounds, amrapMins = state.settings.timer.amrapMins,
+    timerProgram = state.settings.timer.program || [];
 let tmr = null, tmrInt = null, audioCtx = null;
 function saveTimerCfg() {
-  state.settings.timer = { mode: timerMode, emomInt, emomRounds, amrapMins };
+  state.settings.timer = { mode: timerMode, emomInt, emomRounds, amrapMins, program: timerProgram };
   save();
 }
 
@@ -1238,7 +1290,23 @@ function syncTimerUI() {
   $("#timerHint").textContent = timerMode === "emom"
     ? "EMOM: start a new set every interval — rest with whatever time is left."
     : "AMRAP: as many rounds as possible before time runs out. Tap +1 each time you finish a round.";
+  $("#timerProgram").value = timerProgram.join("\n");
+  renderProgramPreview();
 }
+function renderProgramPreview() {
+  if (!timerProgram.length) { $("#programPreview").textContent = "No program set — just shows a round counter."; return; }
+  $("#programPreview").textContent = timerMode === "emom"
+    ? `Cycles every ${timerProgram.length} round${timerProgram.length === 1 ? "" : "s"}: ${timerProgram.join(" → ")}`
+    : `Circuit to repeat each round: ${timerProgram.join(" → ")}`;
+}
+let programSaveTimer = null;
+$("#timerProgram").addEventListener("input", () => {
+  clearTimeout(programSaveTimer);
+  programSaveTimer = setTimeout(() => {
+    timerProgram = $("#timerProgram").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    saveTimerCfg(); renderProgramPreview();
+  }, 300);
+});
 $("#timerModeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   timerMode = b.dataset.val;
@@ -1275,12 +1343,20 @@ async function cancelTimerNotif() {
 }
 $("#timerStart").addEventListener("click", () => {
   const total = timerMode === "emom" ? emomInt * emomRounds : amrapMins * 60;
-  tmr = { mode: timerMode, interval: emomInt, rounds: emomRounds, total, startTs: Date.now(), pausedAt: null, pausedTotal: 0, amrapCount: 0, lastRound: 1, lastBeep: null, finished: false };
+  tmr = { mode: timerMode, interval: emomInt, rounds: emomRounds, total, startTs: Date.now(), pausedAt: null, pausedTotal: 0, amrapCount: 0, lastRound: 1, lastBeep: null, finished: false, program: timerProgram.slice() };
   $("#toRoundBtn").classList.toggle("hidden", timerMode !== "amrap");
   $("#toRoundBtn").textContent = "+1 round (0)";
   $("#toLog").classList.add("hidden");
   $("#toPause").textContent = "Pause";
   $("#toPause").classList.remove("hidden");
+  // EMOM: the program cycles round-to-round. AMRAP: it's a fixed circuit
+  // (rounds aren't tied to a minute), shown once as a reference, not cycled.
+  if (tmr.program.length && timerMode === "amrap") {
+    $("#toExercise").textContent = tmr.program.join(" → ");
+    $("#toExercise").classList.remove("hidden");
+  } else {
+    $("#toExercise").classList.toggle("hidden", !tmr.program.length);
+  }
   $("#timerOverlay").classList.remove("hidden");
   beep(980, 0.2); haptic();
   scheduleTimerNotif();
@@ -1298,6 +1374,7 @@ function timerTick() {
     if (round !== tmr.lastRound) { tmr.lastRound = round; beep(1180, 0.25); haptic(); }
     $("#toMode").textContent = `EMOM · ${tmr.interval}s`;
     sub = `Round ${round} of ${tmr.rounds}`;
+    if (tmr.program.length) $("#toExercise").textContent = tmr.program[(round - 1) % tmr.program.length];
   } else {
     remaining = tmr.total - el;
     $("#toMode").textContent = `AMRAP · ${tmr.total / 60} min`;
@@ -1323,6 +1400,7 @@ function finishTimer() {
     : `${tmr.amrapCount} rounds in ${tmr.total / 60} min`;
   $("#toPause").classList.add("hidden");
   $("#toRoundBtn").classList.add("hidden");
+  $("#toExercise").classList.add("hidden");
   $("#toName").value = "";
   $("#toName").placeholder = tmr.mode === "emom" ? `EMOM ${tmr.interval}s × ${tmr.rounds}` : `AMRAP ${tmr.total / 60}min (${tmr.amrapCount} rounds)`;
   $("#toName").classList.remove("hidden");
@@ -1373,6 +1451,7 @@ function closeTimer() {
   const o = $("#timerOverlay");
   o.classList.add("hidden"); o.classList.remove("work", "warn", "done");
   $("#toName").classList.add("hidden");
+  $("#toExercise").classList.add("hidden");
 }
 function renderTraining() {
   syncTimerUI();
@@ -1455,11 +1534,23 @@ function goalCard(g) {
     <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost</span><span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span></div>
   </div>`;
 }
+let goalsExpanded = false;
 function renderGoalCards() {
-  $("#goalCards").innerHTML = state.goals.length
-    ? state.goals.map((g) => goalCard(g)).join("")
-    : `<div class="card"><p class="muted">Add a goal in Settings to track progress here.</p></div>`;
+  const active = state.goals.filter((g) => !g.achievedOn).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const achieved = state.goals.filter((g) => g.achievedOn).sort((a, b) => (b.achievedOn < a.achievedOn ? -1 : 1));
+  const shown = goalsExpanded ? active : active.slice(0, 2);
+  $("#goalCards").innerHTML = active.length
+    ? shown.map((g) => goalCard(g)).join("") + (active.length > 2
+        ? `<button class="btn ghost full" id="goalsExpandBtn">${goalsExpanded ? "Show less" : `Show all ${active.length} goals`}</button>`
+        : "")
+    : (achieved.length ? "" : `<div class="card"><p class="muted">Add a goal in Settings to track progress here.</p></div>`);
   renderIcons($("#goalCards"));
+  const expandBtn = $("#goalsExpandBtn");
+  if (expandBtn) expandBtn.addEventListener("click", () => { goalsExpanded = !goalsExpanded; renderGoalCards(); });
+
+  $("#achievedLabel").classList.toggle("hidden", !achieved.length);
+  $("#achievedGoalCards").innerHTML = achieved.map((g) => goalCard(g)).join("");
+  renderIcons($("#achievedGoalCards"));
 }
 
 function lineChart({ entries, ma, goals, unit, projDays }) {
@@ -1512,8 +1603,12 @@ function renderWeightChart() {
   // Cap the projection so it can't dominate the x-axis — otherwise every
   // range setting renders on a months-long axis and looks identical.
   const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightRange / 2)) : 0;
-  // Every goal stays on the chart, achieved ones included (dimmer, with a check).
-  const goalLines = sortedGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  // Achieved goals always stay on the chart; active (still-open) goals are
+  // capped to the nearest 2 by date so the chart doesn't get cluttered.
+  const activeSorted = sortedGoals.filter((g) => !g.achievedOn);
+  const achievedSorted = sortedGoals.filter((g) => g.achievedOn);
+  const goalLines = achievedSorted.map((g) => ({ v: g.targetKg, achieved: true }))
+    .concat(activeSorted.slice(0, 2).map((g) => ({ v: g.targetKg, achieved: false })));
   $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays });
   $("#weightDelta").textContent = entries.length >= 2 ? `${(entries[entries.length - 1].kg - entries[0].kg) <= 0 ? "" : "+"}${r1(entries[entries.length - 1].kg - entries[0].kg)} kg over range` : "";
   $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
@@ -1570,7 +1665,10 @@ function renderWeekCard() {
   const maxMag = Math.max(Math.abs(estChange), Math.abs(actual || 0), 0.2);
   const estPct = clamp(Math.abs(estChange) / maxMag, 0, 1) * 100;
   const actPct = actual != null ? clamp(Math.abs(actual) / maxMag, 0, 1) * 100 : 0;
-  $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></h3></div>
+  // Sunday's local notification prompts "your week is ready" — this mirrors that
+  // by highlighting the Summary card itself once the week has just rolled over.
+  const isMonday = new Date().getDay() === 1;
+  $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></h3>${isMonday ? `<span class="review-badge">Weekly review ready</span>` : ""}</div>
     <div class="chips" id="summaryChips">
       <button data-d="7" class="${days === 7 ? "active" : ""}">Week</button>
       <button data-d="30" class="${days === 30 ? "active" : ""}">Month</button>
@@ -1735,6 +1833,43 @@ function renderBody() {
   }));
   renderPhotos();
 }
+function renderCalcSheet() {
+  const p = state.profile, cw = currentWeight(), sexWord = p.sex === "male" ? "male" : "female";
+  const base = p.sex === "male" ? 5 : -161;
+  const baseLine = p.sex === "male" ? "+ 5" : "− 161";
+  const bmrExact = bmr(p.sex, cw, p.heightCm, p.age);
+  const bmrVal = r0(bmrExact);
+  const tdeeVal = tdee();
+  const activityLabel = ACTIVITY_LABELS[String(p.activity)] || p.activity;
+  const deficit = tdeeVal - p.kcalTarget;
+  const floor = kcalFloor(p.sex);
+  const flooredNote = p.kcalTarget === floor && tdeeVal - floor !== deficit
+    ? `<p class="muted" style="margin-top:6px">Your target is capped at the ${floor} kcal safety floor for ${sexWord}s — the raw deficit math wanted to go lower.</p>` : "";
+  $("#calcBody").innerHTML = `
+    <p class="muted" style="margin-bottom:14px">Using your most recent numbers: ${p.age}yo ${sexWord}, ${p.heightCm} cm, ${r1(cw)} kg (from your latest weigh-in — this whole calculation updates automatically every time you log a new weight).</p>
+
+    <p class="field-label" style="margin-top:0">Step 1 — BMR (Basal Metabolic Rate)</p>
+    <p class="muted">Calories your body burns at rest, via the Mifflin-St Jeor formula:</p>
+    <div class="calc-formula">10 × ${r1(cw)} + 6.25 × ${p.heightCm} − 5 × ${p.age} ${baseLine} = <strong>${bmrVal} kcal</strong></div>
+
+    <p class="field-label">Step 2 — TDEE (maintenance calories)</p>
+    <p class="muted">BMR × activity multiplier (${activityLabel} = ×${p.activity}):</p>
+    <div class="calc-formula">${r1(bmrExact)} × ${p.activity} = <strong>${tdeeVal} kcal</strong></div>
+
+    <p class="field-label">Step 3 — Calorie target</p>
+    <p class="muted">Maintenance minus your deficit (from the Pace you picked in Settings):</p>
+    <div class="calc-formula">${tdeeVal} − ${Math.max(0, deficit)} = <strong>${p.kcalTarget} kcal</strong></div>
+    ${flooredNote}
+
+    <p class="field-label">Step 4 — Protein target</p>
+    <p class="muted">Grams per kg of bodyweight (protects muscle during a deficit):</p>
+    <div class="calc-formula">${r1(cw)} kg × ${r1(p.proteinTarget / cw)} g/kg ≈ <strong>${p.proteinTarget} g</strong></div>
+
+    <p class="muted" style="margin-top:16px">Because BMR and TDEE use your <em>current</em> weight, both numbers drift automatically as you lose weight — no need to recalculate anything yourself.</p>`;
+}
+$("#calcOpenBtn").addEventListener("click", () => { renderCalcSheet(); $("#calcSheet").classList.remove("hidden"); });
+$("#calcClose").addEventListener("click", () => $("#calcSheet").classList.add("hidden"));
+$("#calcSheet").addEventListener("click", (e) => { if (e.target.id === "calcSheet") $("#calcSheet").classList.add("hidden"); });
 $("#weightSave").addEventListener("click", () => {
   const v = parseFloat($("#weightInput").value);
   if (!v || v < 25 || v > 350) return toast("Enter a valid weight");
@@ -1798,11 +1933,29 @@ function renderSettings() {
   $("#reminderInfo").textContent = !state.settings.reminder.enabled ? "" : isNativeApp()
     ? `Reminder set for ${state.settings.reminder.time} daily.`
     : "Reminders only fire in the installed app, not this preview.";
+  $("#setWeekly").checked = !!state.settings.weeklyReview.enabled;
+  renderTargetsSummary();
   renderPaceTiers();
   renderSuppSettings();
   renderGoalSettings();
   renderGlossary();
 }
+const ACTIVITY_LABELS = { "1.2": "Sedentary", "1.375": "Lightly active", "1.55": "Active", "1.725": "Very active" };
+function renderTargetsSummary() {
+  const p = state.profile;
+  $("#targetsSummary").innerHTML = `
+    <div class="targets-row"><span>Calories</span><strong>${p.kcalTarget} kcal</strong></div>
+    <div class="targets-row"><span>Protein</span><strong>${p.proteinTarget} g</strong></div>
+    <div class="targets-row"><span>Water</span><strong>${state.settings.waterEnabled ? p.waterTargetMl + " ml" : "off"}</strong></div>
+    <div class="targets-row"><span>Active-calorie goal</span><strong>${p.moveTarget} kcal</strong></div>
+    <div class="targets-row"><span>Activity</span><strong>${ACTIVITY_LABELS[String(p.activity)] || p.activity}</strong></div>`;
+}
+function toggleTargetsForm(show) {
+  $("#targetsForm").classList.toggle("hidden", !show);
+  $("#targetsSummary").classList.toggle("hidden", show);
+  $("#targetsEditBtn").textContent = show ? "Cancel" : "Edit";
+}
+$("#targetsEditBtn").addEventListener("click", () => toggleTargetsForm($("#targetsForm").classList.contains("hidden")));
 function renderPaceTiers() {
   const p = state.profile, t = tdee(), cw = currentWeight();
   $("#paceTiers").innerHTML = PACE_TIERS.map((tier) => {
@@ -1853,6 +2006,32 @@ $("#setReminder").addEventListener("change", () => {
   state.settings.reminder.enabled = $("#setReminder").checked;
   save(); applyReminder();
 });
+async function applyWeeklyReview() {
+  const r = state.settings.weeklyReview;
+  const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
+  if (!isNativeApp() || !LN) { renderSettings(); return; }
+  try {
+    await LN.cancel({ notifications: [{ id: 3 }] });
+    if (r.enabled) {
+      const perm = await LN.requestPermissions();
+      if (perm.display !== "granted") {
+        toast("Notification permission denied");
+        r.enabled = false; save();
+      } else {
+        // Sunday = weekday 1 in Capacitor's schedule.on.weekday
+        await LN.schedule({ notifications: [{
+          id: 3, title: "FitTrack", body: "Your weekly review is ready — open the app to see how this week went.",
+          schedule: { on: { weekday: 1, hour: 18, minute: 0 }, repeats: true },
+        }] });
+      }
+    }
+  } catch (e) { toast("Couldn't schedule weekly review"); }
+  renderSettings();
+}
+$("#setWeekly").addEventListener("change", () => {
+  state.settings.weeklyReview.enabled = $("#setWeekly").checked;
+  save(); applyWeeklyReview();
+});
 $("#setReminderTime").addEventListener("change", () => {
   state.settings.reminder.time = $("#setReminderTime").value;
   save(); if (state.settings.reminder.enabled) applyReminder();
@@ -1869,12 +2048,15 @@ function renderSuppSettings() {
     save(); renderSuppSettings();
   }));
 }
+function toggleSuppForm(show) { $("#suppForm").classList.toggle("hidden", !show); }
+$("#suppNewBtn").addEventListener("click", () => toggleSuppForm(true));
+$("#suppCancelBtn").addEventListener("click", () => { $("#suppName").value = ""; $("#suppNote").value = ""; toggleSuppForm(false); });
 $("#suppAddBtn").addEventListener("click", () => {
   const name = $("#suppName").value.trim();
   if (!name) return toast("Enter a name");
   state.supplements.push({ id: "s" + Date.now(), name, note: $("#suppNote").value.trim() });
   $("#suppName").value = ""; $("#suppNote").value = "";
-  save(); renderSuppSettings(); toast("Supplement added");
+  save(); toggleSuppForm(false); renderSuppSettings(); toast("Supplement added");
 });
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile, kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
@@ -1885,19 +2067,24 @@ $("#settingsSave").addEventListener("click", () => {
   p.moveTarget = parseInt($("#setMove").value, 10) || p.moveTarget;
   p.activity = parseFloat($("#setActivity").value); p.eatBack = $("#setEatBack").checked;
   state.settings.waterEnabled = $("#setWaterEnabled").checked;
-  save(); renderSettings(); renderToday(); toast("Saved");
+  save(); toggleTargetsForm(false); renderSettings(); renderToday(); toast("Saved");
 });
 let editingGoalId = null;
 function resetGoalForm() {
   editingGoalId = null;
   $("#goalLabel").value = ""; $("#goalTargetKg").value = ""; $("#goalDate").value = "";
-  $("#goalAddBtn").textContent = "Add goal";
+  $("#goalAddBtn").textContent = "Save goal";
 }
+function toggleGoalForm(show) { $("#goalForm").classList.toggle("hidden", !show); }
+$("#goalNewBtn").addEventListener("click", () => { resetGoalForm(); toggleGoalForm(true); });
+$("#goalCancelBtn").addEventListener("click", () => { resetGoalForm(); toggleGoalForm(false); });
 function renderGoalSettings() {
+  const active = [...state.goals].filter((g) => !g.achievedOn).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const achieved = [...state.goals].filter((g) => g.achievedOn).sort((a, b) => (b.achievedOn < a.achievedOn ? -1 : 1));
+  const row = (g) => `<li data-id="${g.id}"><span class="row-label"><span class="ic" data-ic="${g.achievedOn ? "check" : "target"}"></span>${esc(g.label)} — ${r1(g.targetKg)}kg ${g.achievedOn ? `· achieved ${fmtShort(g.achievedOn)}` : `by ${fmtShort(g.date)}`}</span>
+     <button class="fi-del" data-id="${g.id}"><span class="ic" data-ic="x"></span></button></li>`;
   $("#goalSettingsList").innerHTML = state.goals.length
-    ? state.goals.map((g) =>
-        `<li data-id="${g.id}"><span class="row-label"><span class="ic" data-ic="target"></span>${esc(g.label)} — ${r1(g.targetKg)}kg by ${fmtShort(g.date)}</span>
-         <button class="fi-del" data-id="${g.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+    ? active.map(row).join("") + achieved.map(row).join("")
     : `<li class="muted" style="border-top:none">No goals yet — add one below.</li>`;
   renderIcons($("#goalSettingsList"));
   $$("#goalSettingsList li").forEach((li) => li.addEventListener("click", (e) => {
@@ -1906,6 +2093,7 @@ function renderGoalSettings() {
     editingGoalId = g.id;
     $("#goalLabel").value = g.label; $("#goalTargetKg").value = g.targetKg; $("#goalDate").value = g.date;
     $("#goalAddBtn").textContent = "Save changes";
+    toggleGoalForm(true);
   }));
   $$("#goalSettingsList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1927,7 +2115,7 @@ $("#goalAddBtn").addEventListener("click", () => {
     state.goals.push({ id: "g" + Date.now(), label, targetKg, date, created: todayKey() });
     toast("Goal added");
   }
-  resetGoalForm(); save(); renderGoalSettings();
+  resetGoalForm(); toggleGoalForm(false); save(); renderGoalSettings();
 });
 $("#apiKeySave").addEventListener("click", () => { state.settings.apiKey = $("#setApiKey").value.trim(); save(); toast(state.settings.apiKey ? "API key saved" : "API key cleared"); });
 $("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.settings.theme = b.dataset.val; applyTheme(); save(); renderSettings(); });
@@ -1960,6 +2148,7 @@ function startApp() {
   $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons(); switchView("today");
   checkGoals();
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
+  if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
 }
 
 renderIcons();
