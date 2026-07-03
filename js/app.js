@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.12";
+const APP_VERSION = "2.13";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -168,12 +168,14 @@ function dayLog(k) {
 }
 function dayTotals(k) {
   const log = state.logs[k];
-  const t = { kcal: 0, p: 0, c: 0, f: 0, items: 0, active: 0 };
+  const t = { kcal: 0, p: 0, c: 0, f: 0, items: 0, active: 0, walkKcal: 0, stepKcal: 0 };
   if (!log) return t;
   for (const m of MEALS) for (const it of (log.meals[m.id] || [])) {
     t.kcal += it.kcal; t.p += it.p || 0; t.c += it.c || 0; t.f += it.f || 0; t.items++;
   }
-  for (const w of (log.walks || [])) t.active += w.kcal;
+  for (const w of (log.walks || [])) { t.active += w.kcal; t.walkKcal += w.kcal; }
+  // Steps count as a "step credit" toward the day's calories burned.
+  if (log.steps) { t.stepKcal = stepKcal(log.steps); t.active += t.stepKcal; }
   return t;
 }
 
@@ -203,7 +205,7 @@ const GLOSSARY = {
   bmi: { title: "BMI", body: "Body Mass Index — weight (kg) ÷ height (m)². A rough population-level screening number, not a precise measure of body composition (it can't tell fat from muscle). Standard bands: under 18.5 Underweight, 18.5–24.9 Normal, 25–29.9 Overweight, 30+ Obese. Updates automatically from your latest weigh-in." },
 };
 function bmiGauge(v) {
-  const cx = 110, cy = 104, r = 80, sw = 15, MIN = 15, MAX = 40;
+  const cx = 110, cy = 112, r = 84, sw = 13, MIN = 15, MAX = 40, gap = 0.55;
   const ang = (x) => Math.PI * (1 - (clamp(x, MIN, MAX) - MIN) / (MAX - MIN)); // MIN→π (left), MAX→0 (right)
   const pt = (x, rad = r) => [cx + rad * Math.cos(ang(x)), cy - rad * Math.sin(ang(x))];
   const arc = (a, b, color) => {
@@ -211,17 +213,16 @@ function bmiGauge(v) {
     return `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="butt"/>`;
   };
   const bands = [[15, 18.5, "var(--blue)"], [18.5, 25, "var(--accent)"], [25, 30, "var(--amber)"], [30, 40, "var(--red)"]];
-  const [nx, ny] = pt(v, r - sw / 2 - 3);
   const cat = v < 18.5 ? "Underweight" : v < 25 ? "Normal" : v < 30 ? "Overweight" : "Obese";
   const catColor = v < 18.5 ? "var(--blue)" : v < 25 ? "var(--accent)" : v < 30 ? "var(--amber)" : "var(--red)";
-  const tick = (x, label) => { const [tx, ty] = pt(x, r + 11); return `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8" fill="var(--muted)" text-anchor="middle">${label}</text>`; };
-  return `<svg viewBox="0 0 220 150" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:260px;display:block;margin:4px auto 2px">
-    ${bands.map((b) => arc(b[0], b[1], b[2])).join("")}
+  const [mx, my] = pt(v); // marker sits on the arc centerline
+  const tick = (x, label) => { const [tx, ty] = pt(x, r + 12); return `<text x="${tx.toFixed(1)}" y="${(ty + 3).toFixed(1)}" font-size="8.5" fill="var(--muted)" text-anchor="middle">${label}</text>`; };
+  return `<svg viewBox="0 0 220 148" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:270px;display:block;margin:6px auto 0">
+    ${bands.map((b, i) => arc(b[0] + (i ? gap : 0), b[1] - (i < bands.length - 1 ? gap : 0), b[2])).join("")}
     ${tick(18.5, "18.5")}${tick(25, "25")}${tick(30, "30")}
-    <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="var(--text)" stroke-width="2.5" stroke-linecap="round"/>
-    <circle cx="${cx}" cy="${cy}" r="5" fill="var(--text)"/>
-    <text x="${cx}" y="${cy + 26}" font-size="22" font-weight="700" fill="var(--text)" text-anchor="middle">${r1(v)}</text>
-    <text x="${cx}" y="${cy + 40}" font-size="10" font-weight="600" fill="${catColor}" text-anchor="middle">${cat}</text>
+    <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="7.5" fill="${catColor}" stroke="var(--bg)" stroke-width="3.5"/>
+    <text x="${cx}" y="${cy - 6}" font-size="34" font-weight="800" letter-spacing="-1" fill="var(--text)" text-anchor="middle">${r1(v)}</text>
+    <text x="${cx}" y="${cy + 12}" font-size="11.5" font-weight="700" fill="${catColor}" text-anchor="middle" style="text-transform:uppercase;letter-spacing:0.5px">${cat}</text>
   </svg>`;
 }
 function openInfo(key) {
@@ -463,9 +464,7 @@ function drawRings(m) {
      <div class="rings-center">
        <span class="big ${m.remaining < 0 ? "over" : ""}">${r0(Math.abs(m.remaining))}</span>
        <label>${m.remaining < 0 ? "OVER" : "kcal left"}</label>
-       <span class="tap-hint"><span class="ic" data-ic="chart"></span>trends</span>
      </div>`;
-  renderIcons($("#ringsWrap"));
 }
 function renderStats(k) {
   const m = ringMetrics(k), p = state.profile;
@@ -480,10 +479,10 @@ function renderStats(k) {
 /* ---------- Trends (tap the rings) ---------- */
 let trendMetric = "kcal", trendRange = 30;
 const TREND_META = {
-  kcal: { lab: "Calories", unit: "kcal", target: () => budgetFor(todayKey()) },
-  p: { lab: "Protein", unit: "g", target: () => state.profile.proteinTarget },
-  c: { lab: "Carbs", unit: "g", target: () => null },
-  f: { lab: "Fat", unit: "g", target: () => null },
+  kcal: { lab: "Calories", unit: "kcal", color: "var(--orange)", target: () => budgetFor(todayKey()) },
+  p: { lab: "Protein", unit: "g", color: "var(--accent)", target: () => state.profile.proteinTarget },
+  c: { lab: "Carbs", unit: "g", color: "var(--blue)", target: () => null },
+  f: { lab: "Fat", unit: "g", color: "var(--purple)", target: () => null },
 };
 function renderTrends() {
   const meta = TREND_META[trendMetric], unit = meta.unit;
@@ -495,7 +494,8 @@ function renderTrends() {
   const ma = movingAvg(entries); // entries are one-per-day, so this is a 7-day smoothed line
   const tgt = meta.target();
   const goals = tgt != null ? [{ v: tgt, achieved: false }] : [];
-  $("#trendChart").innerHTML = lineChart({ entries, ma, goals, unit, projDays: 0, rawLine: true });
+  $("#trendChart").innerHTML = lineChart({ entries, ma, goals, unit, projDays: 0, rawLine: true, color: meta.color });
+  $("#trendLegend").style.setProperty("--ma-color", meta.color);
   $$("#trendMetricChips button").forEach((b) => b.classList.toggle("active", b.dataset.m === trendMetric));
   $$("#trendRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === trendRange));
   if (!entries.length) {
@@ -1669,7 +1669,8 @@ function renderGoalCards() {
   renderIcons($("#achievedGoalCards"));
 }
 
-function lineChart({ entries, ma, goals, unit, projDays, rawLine }) {
+function lineChart({ entries, ma, goals, unit, projDays, rawLine, color }) {
+  const line = color || "var(--accent)";
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
   const x0 = entries[0].d;
@@ -1702,7 +1703,7 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine }) {
     const color = g.achieved ? "var(--accent)" : "var(--amber)";
     return `<line x1="${L}" y1="${Y(g.v).toFixed(1)}" x2="${W - R}" y2="${Y(g.v).toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 4" opacity="${g.achieved ? ".55" : ".8"}"/><text x="${W - R}" y="${(Y(g.v) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${color}">${g.achieved ? "✓ " : ""}${r1(g.v)} ${unit}</text>`;
   }).join("");
-  const projLine = proj ? `<line x1="${Xn(proj.x1).toFixed(1)}" y1="${Y(proj.v1).toFixed(1)}" x2="${Xn(proj.x2).toFixed(1)}" y2="${Y(proj.v2).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="2 4" opacity=".7"/>` : "";
+  const projLine = proj ? `<line x1="${Xn(proj.x1).toFixed(1)}" y1="${Y(proj.v1).toFixed(1)}" x2="${Xn(proj.x2).toFixed(1)}" y2="${Y(proj.v2).toFixed(1)}" stroke="${line}" stroke-width="1.5" stroke-dasharray="2 4" opacity=".7"/>` : "";
   const first = entries[0], last = entries[entries.length - 1];
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
     <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>
@@ -1710,7 +1711,7 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine }) {
     <text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>
     <text x="${L - 4}" y="${(Y(vMax - pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMax - pad)}</text>
     <text x="${L - 4}" y="${(Y(vMin + pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMin + pad)}</text>
-    ${goalLines}${rawPath}<path d="${maPath}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
+    ${goalLines}${rawPath}<path d="${maPath}" fill="none" stroke="${line}" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
 }
 function inRange(entries, days) {
   const from = addDays(todayKey(), -(days - 1));
@@ -1731,7 +1732,7 @@ function renderWeightChart() {
   const achievedSorted = sortedGoals.filter((g) => g.achievedOn);
   const goalLines = achievedSorted.map((g) => ({ v: g.targetKg, achieved: true }))
     .concat(activeSorted.slice(0, 2).map((g) => ({ v: g.targetKg, achieved: false })));
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true });
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true, color: "var(--purple)" });
   if (entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
     const diff = ma[ma.length - 1].v - ma[0].v;
@@ -1746,7 +1747,7 @@ $("#weightRangeChips").addEventListener("click", (e) => {
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
   const entries = inRange(allEntries, weightRange), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
-  $("#waistChart").innerHTML = lineChart({ entries, ma, goals: [], unit: "cm", projDays: 0 });
+  $("#waistChart").innerHTML = lineChart({ entries, ma, goals: [], unit: "cm", projDays: 0, color: "var(--blue)" });
   $("#waistDelta").textContent = state.waists.length >= 2 ? `${(state.waists[state.waists.length - 1].cm - state.waists[0].cm) <= 0 ? "" : "+"}${r1(state.waists[state.waists.length - 1].cm - state.waists[0].cm)} cm since start` : "measure weekly to track belly progress";
 }
 function renderCalChart() {
@@ -1954,8 +1955,11 @@ function renderBody() {
     <div class="stat-box"><div class="v">${cwaist != null ? cwaist + " cm" : "—"}</div><div class="k">current waist</div></div>
     <div class="stat-box"><div class="v">${waistDelta != null ? (waistDelta <= 0 ? "" : "+") + waistDelta + " cm" : "—"}</div><div class="k">waist change</div></div>`;
   renderIcons($("#bodySummary"));
-  $("#weightList").innerHTML = [...state.weights].reverse().slice(0, 8).map((w) =>
-    `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${fmtShort(w.d)}${w.ts ? " · " + fmtTime(w.ts) : ""}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
+  const todayW = state.weights.filter((w) => w.d === todayKey()).reverse();
+  $("#weightList").innerHTML = todayW.length
+    ? todayW.map((w) =>
+      `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${w.ts ? fmtTime(w.ts) : "today"}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")
+    : `<li class="muted" style="border-top:none">No weigh-in logged today — full history is on Progress.</li>`;
   $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) =>
     `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
   renderIcons($("#weightList")); renderIcons($("#waistList"));
@@ -1982,7 +1986,7 @@ function renderSleepSteps() {
     <div class="stat-box"><div class="v">${steps != null ? steps.toLocaleString() : "—"}${steps != null ? `<span class="stat-sub">≈ ${stepKcal(steps)} kcal</span>` : ""}</div><div class="k">steps today</div></div>`;
   renderIcons($("#sleepStepsSummary"));
   $("#stepsNote").textContent = steps != null
-    ? "Steps are shown for awareness — they're already reflected in your activity level, so they aren't added on top of your calorie budget (that would double-count your logged walks)."
+    ? `Steps add ≈ ${stepKcal(steps)} kcal to today's Active total. Turn on "Eat back active calories" in Settings to add that to your eating budget. If you also log a walk, avoid double-counting — log only non-walking workouts alongside steps.`
     : "Log sleep and steps to keep an eye on recovery and daily movement.";
 }
 function renderCalcSheet() {

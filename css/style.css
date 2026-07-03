@@ -1,24 +1,36 @@
 /* ===== FitTrack — minimal =====
    Design tokens: every font-size, radius, and transition in this file comes
    from the scales below. Don't hardcode new values — extend the scale. */
-:root {
-  --bg: #0b0b0d;
-  --card: #151517;
-  --card2: #1c1c1f;
-  --card3: #26262a;
-  --border: rgba(255, 255, 255, 0.08);
-  --text: #f2f2f0;
-  --muted: rgba(240, 240, 238, 0.55);
-  --muted2: rgba(240, 240, 238, 0.28);
+/* Bundled locally (fonts/) so the native app has no network/CDN dependency. */
+@font-face { font-family: "Hanken"; src: url("../fonts/hanken-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Hanken"; src: url("../fonts/hanken-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Hanken"; src: url("../fonts/hanken-600.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Hanken"; src: url("../fonts/hanken-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Hanken"; src: url("../fonts/hanken-800.woff2") format("woff2"); font-weight: 800; font-display: swap; }
 
-  --accent: #3ecf8e;
-  --accent-dim: rgba(62, 207, 142, 0.14);
-  --blue: #4d9de0;
-  --amber: #e8a33d;
+:root {
+  --bg: #08080a;
+  --card: #141417;
+  --card2: #1e1e22;
+  --card3: #2a2a30;
+  --border: rgba(255, 255, 255, 0.07);
+  --border2: rgba(255, 255, 255, 0.12);
+  --text: #f4f4f2;
+  --muted: rgba(244, 244, 242, 0.56);
+  --muted2: rgba(244, 244, 242, 0.30);
+
+  /* MacroFactor-inspired palette (user-provided brand colors) */
+  --accent: #08C343;   /* green — primary */
+  --accent-dim: rgba(8, 195, 67, 0.15);
+  --blue: #215CDA;
+  --purple: #A101C9;
+  --orange: #CE5400;
+  --green: #08C343;
+  --amber: #CE5400;    /* legacy alias → energy/calories orange */
   --red: #e5484d;
 
-  --track: #232326;
-  --on-accent: #08130d;
+  --track: #242429;
+  --on-accent: #04140a;
 
   /* type scale */
   --fs-2xs: 0.68rem;
@@ -31,10 +43,10 @@
   --fs-2xl: 1.7rem;
 
   /* radius scale */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-xl: 24px;
+  --r-sm: 9px;
+  --r-md: 13px;
+  --r-lg: 18px;
+  --r-xl: 26px;
   --r-full: 999px;
 
   /* motion */
@@ -48,13 +60,17 @@
   --card2: #f2f2f2;
   --card3: #e8e8e8;
   --border: rgba(0, 0, 0, 0.08);
+  --border2: rgba(0, 0, 0, 0.14);
   --text: #17171a;
   --muted: rgba(20, 20, 25, 0.55);
   --muted2: rgba(20, 20, 25, 0.28);
-  --accent: #1d9d6c;
-  --accent-dim: rgba(29, 157, 108, 0.12);
-  --blue: #2b7fc4;
-  --amber: #b5730f;
+  --accent: #07a739;
+  --accent-dim: rgba(7, 167, 57, 0.12);
+  --blue: #1c4fbf;
+  --purple: #8e01b0;
+  --orange: #b5490a;
+  --green: #07a739;
+  --amber: #b5490a;
   --red: #d43d42;
   --track: #ececec;
   --on-accent: #ffffff;
@@ -63,13 +79,14 @@
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html { font-size: 16px; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-family: "Hanken", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: var(--fs-base);
   min-height: 100vh; min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
+  letter-spacing: -0.1px;
 }
 button { font: inherit; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .hidden { display: none !important; }
@@ -169,7 +186,7 @@ textarea { resize: none; line-height: 1.5; }
 .view { max-width: 480px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 8px) 16px 0; }
 .bottom-space { height: calc(env(safe-area-inset-bottom) + 108px); }
 .page-header { padding: 2px 4px 12px; }
-.page-header h1 { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -0.4px; }
+.page-header h1 { font-size: var(--fs-2xl); font-weight: 800; letter-spacing: -0.7px; }
 
 .day-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 10px; }
 .day-title { text-align: center; }
@@ -182,7 +199,7 @@ textarea { resize: none; line-height: 1.5; }
 .day-nav .ic { width: 16px; height: 16px; }
 .day-nav:disabled { opacity: 0.3; }
 
-.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 17px; margin-bottom: 13px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
 .card-head h3 { font-size: var(--fs-md); font-weight: 600; letter-spacing: -0.1px; display: flex; align-items: center; min-width: 0; }
 .card-head h3 .ic { margin-right: 8px; }
@@ -309,7 +326,8 @@ textarea { resize: none; line-height: 1.5; }
 .chart svg { width: 100%; height: auto; display: block; }
 .legend { display: flex; gap: 14px; margin-top: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .lg::before { content: "●"; margin-right: 5px; }
-.dot-raw::before { color: var(--muted2); } .dot-ma::before { color: var(--accent); } .dot-goal::before { color: var(--amber); }
+.dot-raw::before { color: var(--muted2); } .dot-ma::before { color: var(--ma-color, var(--accent)); } .dot-goal::before { color: var(--amber); }
+.legend.purple { --ma-color: var(--purple); }
 .mini-bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; flex: 1; min-width: 0; }
 .mini-bar-fill { height: 100%; border-radius: 3px; transition: width var(--t-med); }
 .adherence-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 16px; }

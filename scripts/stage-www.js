@@ -5,7 +5,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const out = path.join(root, "www");
-const INCLUDE = ["index.html", "manifest.webmanifest", "css", "js", "icons"];
+const INCLUDE = ["index.html", "manifest.webmanifest", "css", "js", "icons", "fonts"];
 
 function rmrf(p) { if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true }); }
 function copy(src, dst) {
