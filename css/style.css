@@ -29,6 +29,10 @@
   --yellow: #E8B023;   /* carbs (blue is reserved for Active) */
   --amber: #CE5400;    /* legacy alias → energy/calories orange */
   --red: #e5484d;
+  /* brighter tints for the over-budget "second lap" on each ring */
+  --amber-over: #ff9d54;
+  --accent-over: #57f0a1;
+  --blue-over: #6ba6f5;
 
   /* macro colour coding — used everywhere macros appear */
   --c-protein: var(--green);
@@ -79,6 +83,9 @@
   --yellow: #a67c00;
   --amber: #b5490a;
   --red: #d43d42;
+  --amber-over: #e07a2a;
+  --accent-over: #2ec878;
+  --blue-over: #4d84e0;
   --c-protein: var(--green);
   --c-carbs: var(--yellow);
   --c-fat: var(--purple);
@@ -412,7 +419,18 @@ textarea { resize: none; line-height: 1.5; }
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   padding: 8px 6px;
 }
-.tab { flex: 1; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); padding: 6px 0; border-radius: var(--r-lg); }
+.tab { flex: 1; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); padding: 6px 0; border-radius: var(--r-lg); touch-action: none; }
+.tab.tab-hover { color: var(--text); background: var(--card2); }
+/* Reusable finger-tracking segmented slider (pace picker, etc.) */
+.slider { user-select: none; margin: 6px 0 10px; }
+.slider-track { position: relative; height: 6px; background: var(--track); border-radius: var(--r-full); margin: 18px 6px 12px; touch-action: none; cursor: pointer; }
+.slider-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: var(--r-full); }
+.slider-stop { position: absolute; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--muted2); }
+.slider-thumb { position: absolute; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.4); transition: left var(--t-fast); }
+.slider-labels { display: flex; justify-content: space-between; }
+.slider-lab { font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); flex: 1; text-align: center; cursor: pointer; }
+.slider-lab:first-child { text-align: left; } .slider-lab:last-child { text-align: right; }
+.slider-lab.active { color: var(--accent); }
 .tab.active { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .tab .ic { width: 21px; height: 21px; }
 
@@ -533,6 +551,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
 }
 .chart rect[data-tip] { cursor: pointer; }
+/* Let horizontal drags scrub the tooltip without the page scrolling under them
+   (vertical panning still works to scroll past the chart). */
+.chart, #trendChart, #weightChart, #waistChart, #calChart, #stepsChart, #sleepChart { touch-action: pan-y; }
 
 /* ===== Section labels (Progress) ===== */
 .section-label { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 20px 4px 8px; }

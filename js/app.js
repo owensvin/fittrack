@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.16";
+const APP_VERSION = "2.17";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -19,6 +19,18 @@ function todayKey() { return toKey(new Date()); }
 function daysBetween(k1, k2) { return Math.round((fromKey(k2) - fromKey(k1)) / 86400000); }
 function fmtShort(k) { return fromKey(k).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function fmtTime(ts) { return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+function fmtDuration(days) {
+  if (days <= 30) return `${days}d`;
+  const mo = days / 30.44;
+  return `${mo < 10 ? r1(mo) : r0(mo)} mo`;
+}
+function ageFromDob(dob) {
+  if (!dob) return null;
+  const b = fromKey(dob), n = new Date();
+  let a = n.getFullYear() - b.getFullYear();
+  if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) a--;
+  return a;
+}
 // Colour-coded P/C/F chips for food rows (protein green, carbs yellow, fat purple).
 function macroTags(o) {
   const parts = [];
@@ -162,6 +174,7 @@ function loadState() {
       }
       if (s.profile && s.profile.autoAdjust === undefined) s.profile.autoAdjust = false;
       if (s.profile && !s.profile.birthYear && s.profile.age) s.profile.birthYear = new Date().getFullYear() - s.profile.age;
+      if (s.profile && !s.profile.birthDate) s.profile.birthDate = `${s.profile.birthYear || (new Date().getFullYear() - s.profile.age)}-01-01`;
       if (s.settings.haptics === undefined) s.settings.haptics = true;
       if (!s.settings.weekStart) s.settings.weekStart = "mon";
       if (s.goals) for (const g of s.goals) { if (!g.created) g.created = (s.profile && s.profile.startDate) || todayKey(); }
@@ -264,6 +277,7 @@ const GLOSSARY = {
   program: { title: "EMOM program", body: "List one move per line (e.g. Swings / Goblet squats / Push press / Rest) and it cycles round to round — round 1 is line 1, round 2 is line 2, and it wraps back to line 1 after the list ends. A 4-move list on a 12-round EMOM repeats the circuit 3 times. Leave it blank to just see a plain round counter. This only drives EMOM, since AMRAP's rounds aren't tied to fixed minutes — there it's shown as a fixed circuit to repeat." },
   streak: { title: "Streak & adherence", body: "There are two streaks: the flame is your logging streak — consecutive days you logged anything at all. The target icon is your on-target streak — consecutive days you also stayed under your calorie budget. Missing your target doesn't break the logging streak, and vice versa. Adherence % (in the Summary) is just days logged ÷ days in that period — it only needs you to show up, not hit target." },
   bmi: { title: "BMI", body: "Body Mass Index — weight (kg) ÷ height (m)². A rough population-level screening number, not a precise measure of body composition (it can't tell fat from muscle). Standard bands: under 18.5 Underweight, 18.5–24.9 Normal, 25–29.9 Overweight, 30+ Obese. Updates automatically from your latest weigh-in." },
+  expenditure: { title: "Adaptive expenditure (TDEE)", body: "Your real daily energy burn, worked out from energy balance rather than a formula: it takes the calories you've actually logged over the last couple of weeks and adds the energy behind your weight-trend change (about 7700 kcal per kg). If your weight is dropping faster than your intake alone explains, you're burning more than a BMR×activity estimate assumes — so this number is more accurate, and it re-tunes itself as you keep logging. The suggested target is simply this expenditure minus the deficit from your chosen Pace, so it always respects how aggressive you want to be. It needs about 2 weeks of food + weight logging before it can show." },
 };
 function bmiGauge(v) {
   const cx = 110, cy = 112, r = 84, sw = 13, MIN = 15, MAX = 40, gap = 0.55;
@@ -498,19 +512,32 @@ function switchView(name) {
   if (name === "settings") renderSettings();
   window.scrollTo(0, 0);
 }
-(function setupTabSwipe() {
+// Finger-tracking nav: drag across the bar and the page lands on whichever tab
+// your finger is over when you let go (taps still work via the click handlers).
+(function setupNavSlider() {
   const bar = $(".tabbar");
-  let sx = 0, sy = 0, tracking = false;
-  bar.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true; }, { passive: true });
-  bar.addEventListener("touchend", (e) => {
-    if (!tracking) return; tracking = false;
-    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    const current = $(".tab.active").dataset.view;
-    let idx = TAB_ORDER.indexOf(current);
-    idx = dx < 0 ? Math.min(idx + 1, TAB_ORDER.length - 1) : Math.max(idx - 1, 0);
-    if (TAB_ORDER[idx] !== current) switchView(TAB_ORDER[idx]);
-  }, { passive: true });
+  const tabs = [...bar.querySelectorAll(".tab")];
+  let dragging = false, startX = 0, moved = false, hover = -1;
+  const idxAt = (x) => { const r = bar.getBoundingClientRect(); return clamp(Math.floor((x - r.left) / r.width * tabs.length), 0, tabs.length - 1); };
+  const setHover = (i) => { if (i === hover) return; hover = i; tabs.forEach((t, j) => t.classList.toggle("tab-hover", j === i)); };
+  const clearHover = () => { hover = -1; tabs.forEach((t) => t.classList.remove("tab-hover")); };
+  bar.addEventListener("pointerdown", (e) => { dragging = true; startX = e.clientX; moved = false; });
+  bar.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    if (!moved && Math.abs(e.clientX - startX) > 8) { moved = true; try { bar.setPointerCapture(e.pointerId); } catch (_) {} }
+    if (moved) setHover(idxAt(e.clientX));
+  });
+  const end = (e) => {
+    if (!dragging) return; dragging = false;
+    if (!moved) return;
+    const v = tabs[idxAt(e.clientX)].dataset.view; clearHover();
+    if (v && v !== $(".tab.active").dataset.view) { haptic("light"); switchView(v); }
+    const block = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    bar.addEventListener("click", block, { capture: true, once: true });
+    setTimeout(() => bar.removeEventListener("click", block, true), 300);
+  };
+  bar.addEventListener("pointerup", end);
+  bar.addEventListener("pointercancel", () => { dragging = false; clearHover(); });
 })();
 
 /* ---------- daily metrics ---------- */
@@ -525,9 +552,9 @@ function ringMetrics(k) {
 function drawRings(m) {
   const cx = 95, cy = 95;
   const rings = [
-    { r: 83, pct: m.cal, color: "var(--amber)" },
-    { r: 65, pct: m.pro, color: "var(--accent)" },
-    { r: 47, pct: m.mov, color: "var(--blue)" },
+    { r: 83, pct: m.cal, color: "var(--amber)", over: "var(--amber-over)" },
+    { r: 65, pct: m.pro, color: "var(--accent)", over: "var(--accent-over)" },
+    { r: 47, pct: m.mov, color: "var(--blue)", over: "var(--blue-over)" },
   ];
   let circles = "";
   rings.forEach((rg) => {
@@ -535,10 +562,10 @@ function drawRings(m) {
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="12"/>`;
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - first)}"/>`;
     // Over budget: a second lap wraps over the first in a darker shade of the
-    // same colour, so exceeding the target reads at a glance.
+    // same colour (explicit colour, not a CSS filter, so it renders in WKWebView).
     if (pct > 1) {
       const over = Math.min(pct - 1, 1);
-      circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - over)}" style="filter:brightness(0.6) saturate(1.3)"/>`;
+      circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.over}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - over)}"/>`;
     }
   });
   $("#ringsWrap").innerHTML =
@@ -610,7 +637,7 @@ function renderExpenditureCard() {
   const p = state.profile, rec = recommendedTarget(e.expenditure), cur = targetFor(todayKey());
   el.innerHTML = `
     <div class="exp-top">
-      <div><span class="exp-lab">Your expenditure</span><div class="exp-val">${e.expenditure} <small>kcal/day</small></div></div>
+      <div><span class="exp-lab">Your expenditure <button class="info-btn" data-info="expenditure"><span class="ic" data-ic="info"></span></button></span><div class="exp-val">${e.expenditure} <small>kcal/day</small></div></div>
       <div class="exp-trend ${e.weeklyChange <= 0 ? "t-green" : "t-amber"}">${e.weeklyChange > 0 ? "+" : ""}${e.weeklyChange}<small> kg/wk</small></div>
     </div>
     <p class="exp-sub">Your real TDEE from the last ${e.days} logged days — more accurate than the ${tdee()} formula estimate, and it retunes itself as you log. Suggested target keeps your chosen ${p.targetDeficit} kcal/day deficit.</p>
@@ -618,6 +645,7 @@ function renderExpenditureCard() {
       <div><span class="exp-lab">Suggested target</span> <strong>${rec} kcal</strong>${rec === cur ? ` <span class="t-green">✓ current</span>` : ` <span class="muted">(now ${cur})</span>`}</div>
       ${rec !== cur ? `<button class="btn small" id="expApply">Use ${rec}</button>` : ""}
     </div>`;
+  renderIcons(el);
   const b = $("#expApply");
   if (b) b.addEventListener("click", () => {
     p.kcalTarget = rec; recordTargetChange(rec); save();
@@ -819,18 +847,6 @@ $("#calClose").addEventListener("click", () => $("#calSheet").classList.add("hid
 $("#calSheet").addEventListener("click", (e) => { if (e.target.id === "calSheet") $("#calSheet").classList.add("hidden"); });
 $("#calPrev").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
 $("#calNext").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
-// Swipe the calendar left/right to change month.
-(function setupCalSwipe() {
-  const host = $("#calSheet"); if (!host) return;
-  let sx = 0, sy = 0, tracking = false;
-  host.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true; }, { passive: true });
-  host.addEventListener("touchend", (e) => {
-    if (!tracking) return; tracking = false;
-    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    calMonth.setMonth(calMonth.getMonth() + (dx < 0 ? 1 : -1)); haptic("light"); renderCalendar();
-  }, { passive: true });
-})();
 function renderCalendar() {
   $("#calMonthLabel").textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const year = calMonth.getFullYear(), month = calMonth.getMonth();
@@ -1808,7 +1824,10 @@ function goalCard(g) {
   const pct = need > 0 ? clamp(lost / need, 0, 1) : (cw <= tgt ? 1 : 0);
   const daysLeft = Math.max(0, daysBetween(todayKey(), date));
   const trend = weightTrendPerDay();
-  let dot = "n", pace = `${daysLeft} days left`;
+  // At the current weight-trend rate, when would this goal be reached?
+  const daysToHit = (trend !== null && trend < 0 && cw > tgt) ? Math.ceil((cw - tgt) / -trend) : null;
+  const projDate = daysToHit != null ? addDays(todayKey(), Math.min(daysToHit, 3650)) : null;
+  let dot = "n", pace = `${fmtDuration(daysLeft)} left`;
   if (cw <= tgt) { dot = "g"; pace = "Reached!"; }
   else if (trend !== null && daysLeft > 0) {
     const proj = cw + trend * daysLeft, diff = proj - tgt;
@@ -1816,6 +1835,7 @@ function goalCard(g) {
     else if (diff <= 0.2) { dot = "g"; pace = "On track"; }
     else if (diff <= 1.2) { dot = "y"; pace = "Close — push a bit"; }
     else { dot = "r"; pace = `Behind (proj ${r1(proj)}kg)`; }
+    if (projDate) pace += ` · ~${fmtShort(projDate)}`;
   }
   // time bar: how much of the goal window has elapsed (grey, red near the end)
   const windowDays = Math.max(1, daysBetween(g.created || p.startDate, date));
@@ -1827,7 +1847,7 @@ function goalCard(g) {
     <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div></div>
     <div class="goal-time-row">
       <div class="goal-time-bar"><div class="goal-time-fill ${urgent ? "urgent" : ""}" style="width:${elapsedFrac * 100}%"></div></div>
-      <span class="goal-time-label ${urgent ? "urgent" : ""}">${daysLeft}d left</span>
+      <span class="goal-time-label ${urgent ? "urgent" : ""}">${fmtDuration(daysLeft)} left</span>
     </div>
     <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost</span><span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span></div>
   </div>`;
@@ -2243,19 +2263,7 @@ $("#sumFullChips").addEventListener("click", (e) => {
 });
 $("#sumPrev").addEventListener("click", () => { sumFullOffset++; haptic("light"); renderSummaryFull(); });
 $("#sumNext").addEventListener("click", () => { if (sumFullOffset > 0) { sumFullOffset--; haptic("light"); renderSummaryFull(); } });
-// swipe anywhere on the sheet: right = older period, left = newer
-(function setupSummarySwipe() {
-  const panel = $("#summarySheet .sheet-panel");
-  let sx = 0, sy = 0, tracking = false;
-  panel.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true; }, { passive: true });
-  panel.addEventListener("touchend", (e) => {
-    if (!tracking) return; tracking = false;
-    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (dx > 0) { sumFullOffset++; renderSummaryFull(); }
-    else if (sumFullOffset > 0) { sumFullOffset--; renderSummaryFull(); }
-  }, { passive: true });
-})();
+// (Period is changed with the ‹ › arrows; swipe intentionally left off here.)
 /* ---------- Body ---------- */
 function bmi(kg, cm) {
   const m = cm / 100, val = kg / (m * m);
@@ -2446,9 +2454,12 @@ function renderSettings() {
   $("#setKcal").value = p.kcalTarget; $("#setProtein").value = p.proteinTarget; $("#setWater").value = p.waterTargetMl;
   $("#setMove").value = p.moveTarget; $("#setActivity").value = String(p.activity); $("#setEatBack").checked = !!p.eatBack;
   $("#setAutoAdjust").checked = !!p.autoAdjust;
-  $("#setAge").value = p.age; $("#setSex").value = p.sex;
-  $("#setWeekStart").value = state.settings.weekStart || "mon";
   $("#setHaptics").checked = state.settings.haptics !== false;
+  // Profile section
+  $("#setDob").value = p.birthDate || "";
+  $("#setSex").value = p.sex;
+  $("#setWeekStart").value = state.settings.weekStart || "mon";
+  $("#profileSummary").innerHTML = `<div class="targets-row"><span>Age</span><strong>${p.age}</strong></div><div class="targets-row"><span>Sex</span><strong>${p.sex === "male" ? "Male" : "Female"}</strong></div><div class="targets-row"><span>Week starts</span><strong>${(state.settings.weekStart || "mon") === "mon" ? "Monday" : "Sunday"}</strong></div>`;
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
   $("#setApiKey").value = state.settings.apiKey || "";
@@ -2484,28 +2495,64 @@ function toggleTargetsForm(show) {
   $("#targetsEditBtn").textContent = show ? "Cancel" : "Edit";
 }
 $("#targetsEditBtn").addEventListener("click", () => toggleTargetsForm($("#targetsForm").classList.contains("hidden")));
+function toggleProfileForm(show) {
+  $("#profileForm").classList.toggle("hidden", !show);
+  $("#profileSummary").classList.toggle("hidden", show);
+  $("#profileEditBtn").textContent = show ? "Cancel" : "Edit";
+}
+$("#profileEditBtn").addEventListener("click", () => toggleProfileForm($("#profileForm").classList.contains("hidden")));
+$("#profileSave").addEventListener("click", () => {
+  const p = state.profile, dob = $("#setDob").value;
+  if (dob) { const a = ageFromDob(dob); if (a == null || a < 13 || a > 100) return toast("Enter a valid date of birth"); p.birthDate = dob; p.age = a; p.birthYear = fromKey(dob).getFullYear(); }
+  p.sex = $("#setSex").value;
+  state.settings.weekStart = $("#setWeekStart").value;
+  save(); toggleProfileForm(false); renderSettings(); renderToday(); toast("Profile saved");
+});
+// A reusable finger-tracking segmented slider: drag the thumb (or tap a label);
+// the value follows the finger and commits on release.
+function renderSlider(container, labels, index, onChange) {
+  const n = labels.length;
+  container.innerHTML = `
+    <div class="slider-track">
+      <div class="slider-fill"></div>
+      ${labels.map((_, i) => `<span class="slider-stop" style="left:${n > 1 ? (i / (n - 1)) * 100 : 0}%"></span>`).join("")}
+      <div class="slider-thumb"></div>
+    </div>
+    <div class="slider-labels">${labels.map((l, i) => `<span class="slider-lab${i === index ? " active" : ""}" data-i="${i}">${l}</span>`).join("")}</div>`;
+  const track = container.querySelector(".slider-track");
+  const thumb = container.querySelector(".slider-thumb");
+  const fill = container.querySelector(".slider-fill");
+  const labs = [...container.querySelectorAll(".slider-lab")];
+  let cur = index, dragging = false;
+  const setPos = (i) => {
+    const pct = n > 1 ? (i / (n - 1)) * 100 : 0;
+    thumb.style.left = pct + "%"; fill.style.width = pct + "%";
+    labs.forEach((el, j) => el.classList.toggle("active", j === i));
+  };
+  setPos(index);
+  const idxAt = (x) => { const r = track.getBoundingClientRect(); return clamp(Math.round((x - r.left) / r.width * (n - 1)), 0, n - 1); };
+  const move = (x) => { const i = idxAt(x); if (i !== cur) { cur = i; setPos(i); haptic("light"); } };
+  track.addEventListener("pointerdown", (e) => { dragging = true; try { track.setPointerCapture(e.pointerId); } catch (_) {} move(e.clientX); });
+  track.addEventListener("pointermove", (e) => { if (dragging) move(e.clientX); });
+  const end = () => { if (!dragging) return; dragging = false; onChange(cur); };
+  track.addEventListener("pointerup", end);
+  track.addEventListener("pointercancel", end);
+  labs.forEach((el) => el.addEventListener("click", () => { cur = +el.dataset.i; setPos(cur); onChange(cur); }));
+}
+const PACE_SHORT = { sustainable: "Steady", moderate: "Moderate", aggressive: "Aggressive", verylow: "Very low" };
 function renderPaceTiers() {
   const p = state.profile, t = tdee(), cw = currentWeight();
-  $("#paceTiers").innerHTML = PACE_TIERS.map((tier) => {
-    const kcal = Math.max(t - tier.deficit, kcalFloor(p.sex));
-    const protein = r0(cw * tier.proteinPerKg);
-    const active = p.paceTier === tier.id;
-    return `<button data-tier="${tier.id}" class="${active ? "active" : ""}">
-      <strong>${tier.name}</strong>
-      <span>${kcal} kcal · ${protein}g protein</span>
-    </button>`;
-  }).join("");
-  $$("#paceTiers button").forEach((b) => b.addEventListener("click", () => {
-    const tier = PACE_TIERS.find((x) => x.id === b.dataset.tier);
-    const kcal = Math.max(t - tier.deficit, kcalFloor(p.sex));
-    $("#setKcal").value = kcal;
-    $("#setProtein").value = r0(cw * tier.proteinPerKg);
-    $("#paceNote").textContent = tier.note;
-    $$("#paceTiers button").forEach((x) => x.classList.toggle("active", x === b));
+  const labels = PACE_TIERS.map((x) => PACE_SHORT[x.id] || x.name);
+  let idx = PACE_TIERS.findIndex((x) => x.id === p.paceTier); if (idx < 0) idx = 0;
+  renderSlider($("#paceTiers"), labels, idx, (i) => {
+    // Only on an explicit pick do we retune the calorie/protein inputs.
+    const tier = PACE_TIERS[i], kcal = Math.max(t - tier.deficit, kcalFloor(p.sex)), prot = r0(cw * tier.proteinPerKg);
+    $("#setKcal").value = kcal; $("#setProtein").value = prot;
+    $("#paceNote").textContent = `${tier.name} → ${kcal} kcal · ${prot} g protein. ${tier.note}`;
     p.paceTier = tier.id;
-  }));
-  const current = PACE_TIERS.find((x) => x.id === p.paceTier);
-  $("#paceNote").textContent = current ? current.note : "Pick a pace to auto-fill calorie and protein targets below, or set your own.";
+  });
+  const cur = PACE_TIERS[idx];
+  $("#paceNote").textContent = cur ? `${cur.name} — ${cur.note}` : "Slide to pick a pace, or set your own targets below.";
 }
 function isNativeApp() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
 async function applyReminder() {
@@ -2546,9 +2593,14 @@ async function applyWeeklyReview() {
         toast("Notification permission denied");
         r.enabled = false; save();
       } else {
+        // Body includes your latest adaptive expenditure + suggested target when
+        // there's enough data (refreshed every time the app reschedules this).
+        let body = "Your weekly review is ready — open to see how this week went.";
+        const e = state.profile ? adaptiveExpenditure() : null;
+        if (e) { const rec = recommendedTarget(e.expenditure); body = `Weekly review ready. Expenditure ≈ ${e.expenditure} kcal/day, suggested target ${rec} kcal — open for the full picture.`; }
         // Sunday = weekday 1 in Capacitor's schedule.on.weekday
         await LN.schedule({ notifications: [{
-          id: 3, title: "FitTrack", body: "Your weekly review is ready — open the app to see how this week went.",
+          id: 3, title: "FitTrack", body,
           schedule: { on: { weekday: 1, hour: 18, minute: 0 }, repeats: true },
         }] });
       }
@@ -2589,9 +2641,6 @@ $("#suppAddBtn").addEventListener("click", () => {
 });
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile;
-  p.age = parseInt($("#setAge").value, 10) || p.age;
-  p.birthYear = new Date().getFullYear() - p.age;
-  p.sex = $("#setSex").value;
   p.activity = parseFloat($("#setActivity").value);
   const kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
   if (kcal && kcal < floor) { toast(`Minimum safe target: ${floor} kcal`); $("#setKcal").value = floor; return; }
@@ -2602,7 +2651,6 @@ $("#settingsSave").addEventListener("click", () => {
   p.eatBack = $("#setEatBack").checked;
   p.autoAdjust = $("#setAutoAdjust").checked;
   state.settings.waterEnabled = $("#setWaterEnabled").checked;
-  state.settings.weekStart = $("#setWeekStart").value;
   save(); toggleTargetsForm(false); renderSettings(); renderToday(); toast("Saved");
 });
 let editingGoalId = null;
@@ -2686,8 +2734,9 @@ $("#resetBtn").addEventListener("click", () => {
 /* ---------- init ---------- */
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
 function startApp() {
-  // Keep age current from birth year so it increments on its own each year.
-  if (state.profile && state.profile.birthYear) state.profile.age = new Date().getFullYear() - state.profile.birthYear;
+  // Keep age current from date of birth so it increments on its own.
+  if (state.profile && state.profile.birthDate) state.profile.age = ageFromDob(state.profile.birthDate);
+  else if (state.profile && state.profile.birthYear) state.profile.age = new Date().getFullYear() - state.profile.birthYear;
   $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons();
   maybeAutoAdjust();
   switchView("today");

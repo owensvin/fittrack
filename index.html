@@ -319,21 +319,33 @@
     <main id="view-settings" class="view hidden">
       <header class="page-header"><h1>Settings</h1></header>
       <section class="card">
+        <div class="card-head"><h3>Profile</h3><button class="btn small" id="profileEditBtn">Edit</button></div>
+        <div id="profileSummary" class="targets-summary"></div>
+        <div id="profileForm" class="hidden">
+          <div class="form-grid">
+            <label>Date of birth <input type="date" id="setDob"></label>
+            <label>Sex
+              <select id="setSex"><option value="male">Male</option><option value="female">Female</option></select>
+            </label>
+            <label>Week starts
+              <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
+            </label>
+          </div>
+          <button class="btn primary full" id="profileSave">Save</button>
+        </div>
+      </section>
+      <section class="card">
         <div class="card-head"><h3>Targets</h3><button class="btn small" id="targetsEditBtn">Edit</button></div>
         <div id="targetsSummary" class="targets-summary"></div>
         <div id="targetsForm" class="hidden">
           <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
-          <div class="option-list" id="paceTiers"></div>
+          <div class="slider" id="paceTiers"></div>
           <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
           <div class="form-grid">
             <label>Calorie target <input type="number" id="setKcal" inputmode="numeric"></label>
             <label>Protein target (g) <input type="number" id="setProtein" inputmode="numeric"></label>
             <label>Water target (ml) <input type="number" id="setWater" inputmode="numeric"></label>
             <label>Active-calorie goal <input type="number" id="setMove" inputmode="numeric"></label>
-            <label>Age <input type="number" id="setAge" inputmode="numeric"></label>
-            <label>Sex
-              <select id="setSex"><option value="male">Male</option><option value="female">Female</option></select>
-            </label>
             <label>Activity
               <select id="setActivity">
                 <option value="1.2">Sedentary</option>
@@ -341,9 +353,6 @@
                 <option value="1.55">Active</option>
                 <option value="1.725">Very active</option>
               </select>
-            </label>
-            <label>Week starts
-              <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
             </label>
           </div>
           <div class="switch-row">
@@ -768,7 +777,7 @@
           <span id="sumRangeLabel" class="range-label"></span>
           <button class="day-nav" id="sumNext"><span class="ic" data-ic="chevR"></span></button>
         </div>
-        <p class="muted center" style="margin-bottom:4px">Swipe left or right to change period</p>
+        <p class="muted center" style="margin-bottom:4px">Use ‹ › to change period</p>
         <p class="field-label">Daily calories vs target</p>
         <div id="sumCalDiff" class="chart"></div>
         <p class="legend"><span class="lg dot-ma">under target</span><span class="lg dot-goal">over target</span></p>
