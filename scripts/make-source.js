@@ -11,20 +11,23 @@ const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "package.js
 const version = pkg.version || "2.0.0";
 const size = fs.existsSync(ipaPath) ? fs.statSync(ipaPath).size : 0;
 const base = `https://github.com/${owner}/${repo}/releases/latest/download`;
+// The release download URL is identical every build, so SideStore caches the
+// icon forever. Version the query string to force a refetch when it changes.
+const iconURL = `${base}/icon-512.png?v=${version}`;
 
 const source = {
   name: "FitTrack (Private)",
   identifier: "app.fittrack.personal.source",
   subtitle: "Personal weight-loss tracker",
-  iconURL: `${base}/icon-512.png`,
+  iconURL,
   apps: [{
     name: "FitTrack",
     bundleIdentifier: "app.fittrack.personal",
     developerName: "Private build",
     subtitle: "Calorie, weight & habit tracker",
     localizedDescription: "Personal calorie, weight and habit tracker with rings, streaks, supplements, walk tracking and dual goals.",
-    iconURL: `${base}/icon-512.png`,
-    tintColor: "2ee6a6",
+    iconURL,
+    tintColor: "215cda",
     category: "lifestyle",
     versions: [{
       version,

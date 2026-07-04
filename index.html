@@ -344,6 +344,10 @@
             <label class="switch"><input type="checkbox" id="setEatBack"><span class="knob"></span></label>
           </div>
           <div class="switch-row">
+            <div><div class="switch-title">Auto-adjust target weekly</div><div class="muted">Retunes calories to your real expenditure each week (see the Expenditure screen)</div></div>
+            <label class="switch"><input type="checkbox" id="setAutoAdjust"><span class="knob"></span></label>
+          </div>
+          <div class="switch-row">
             <div><div class="switch-title">Track water</div><div class="muted">Shows the water card on Today</div></div>
             <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
           </div>
@@ -464,7 +468,7 @@
       <div class="sheet-actions sheet-actions-4">
         <button class="btn ghost" id="scanBtn"><span class="ic" data-ic="barcode"></span>Scan</button>
         <button class="btn ghost" id="aiBtn"><span class="ic" data-ic="sparkle"></span>Photo</button>
-        <button class="btn ghost" id="addManualBtn"><span class="ic" data-ic="plus"></span>Add manually</button>
+        <button class="btn ghost" id="addManualBtn"><span class="ic" data-ic="plus"></span>Quick Add</button>
         <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="layers"></span>Custom</button>
       </div>
       <input type="file" id="aiPhotoInput" accept="image/*" capture="environment" hidden>
@@ -524,6 +528,13 @@
       <div class="macro-row">
         <div class="macro-field"><label>Time</label><input type="time" id="detailTime"></div>
       </div>
+      <p class="field-label">Add to</p>
+      <div class="chips meal-chips" id="detailMealChips">
+        <button data-meal="breakfast">Breakfast</button>
+        <button data-meal="lunch">Lunch</button>
+        <button data-meal="dinner">Dinner</button>
+        <button data-meal="snacks">Snacks</button>
+      </div>
       <button class="btn primary full" id="detailAdd">Add</button>
     </div>
   </div>
@@ -564,9 +575,9 @@
             </div>
           </div>
           <div class="macro-row">
-            <div class="macro-field"><label>Protein (g)</label><input type="number" id="qProt" inputmode="decimal" placeholder="0"></div>
-            <div class="macro-field"><label>Fat (g)</label><input type="number" id="qFat" inputmode="decimal" placeholder="0"></div>
-            <div class="macro-field"><label>Carbs (g)</label><input type="number" id="qCarb" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-p">Protein (g)</label><input type="number" id="qProt" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-f">Fat (g)</label><input type="number" id="qFat" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-c">Carbs (g)</label><input type="number" id="qCarb" inputmode="decimal" placeholder="0"></div>
           </div>
         </div>
         <div class="hidden" id="qIngredientsFields">
@@ -589,9 +600,9 @@
             </div>
           </div>
           <div class="macro-row">
-            <div class="macro-field"><label>Protein (g)</label><input type="number" id="ingProt" inputmode="decimal" placeholder="0"></div>
-            <div class="macro-field"><label>Fat (g)</label><input type="number" id="ingFat" inputmode="decimal" placeholder="0"></div>
-            <div class="macro-field"><label>Carbs (g)</label><input type="number" id="ingCarb" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-p">Protein (g)</label><input type="number" id="ingProt" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-f">Fat (g)</label><input type="number" id="ingFat" inputmode="decimal" placeholder="0"></div>
+            <div class="macro-field"><label class="m-c">Carbs (g)</label><input type="number" id="ingCarb" inputmode="decimal" placeholder="0"></div>
           </div>
           <button class="btn ghost full" id="ingAddBtn">Add ingredient</button>
           <div class="macro-row" style="margin-top:16px">
@@ -604,6 +615,15 @@
         </div>
         <div class="form-grid">
           <label id="qServingWrap" class="hidden">Serving label <input type="text" id="qServing" placeholder="e.g. 1 bowl"></label>
+        </div>
+      </div>
+      <div id="quickMealWrap" class="hidden">
+        <p class="field-label">Add to</p>
+        <div class="chips meal-chips" id="quickMealChips">
+          <button data-meal="breakfast">Breakfast</button>
+          <button data-meal="lunch">Lunch</button>
+          <button data-meal="dinner">Dinner</button>
+          <button data-meal="snacks">Snacks</button>
         </div>
       </div>
       <button class="btn primary full" id="quickSave">Add</button>
@@ -688,10 +708,12 @@
   <div id="trendsSheet" class="sheet hidden">
     <div class="sheet-panel full">
       <div class="sheet-head">
-        <h2>Trends</h2>
+        <h2>Expenditure</h2>
         <button class="sheet-close" id="trendsClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <div id="expenditureCard" class="exp-card"></div>
+        <p class="field-label">Intake trends</p>
         <div class="chips" id="trendMetricChips">
           <button data-m="kcal" class="active">Calories</button>
           <button data-m="p">Protein</button>
@@ -722,7 +744,7 @@
   <div id="summarySheet" class="sheet hidden">
     <div class="sheet-panel full">
       <div class="sheet-head">
-        <h2>Summary</h2>
+        <h2>Progress Summary</h2>
         <button class="sheet-close" id="summaryFullClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">

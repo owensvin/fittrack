@@ -14,6 +14,7 @@ on:
       - "css/**"
       - "js/**"
       - "icons/**"
+      - "assets/**"
       - "manifest.webmanifest"
       - "capacitor.config.json"
       - "package.json"
@@ -55,6 +56,12 @@ jobs:
 
       - name: Add iOS platform
         run: npx cap add ios
+
+      # Generate the native iOS AppIcon (and launch screen) from assets/icon.png.
+      # Without this, `cap add ios` leaves Capacitor's default placeholder icon,
+      # which is why the home-screen icon never changed before.
+      - name: Generate native app icons
+        run: npx @capacitor/assets generate --ios
 
       - name: Sync web assets into iOS project
         run: npx cap sync ios

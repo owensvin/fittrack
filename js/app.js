@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.14";
+const APP_VERSION = "2.15";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -19,6 +19,14 @@ function todayKey() { return toKey(new Date()); }
 function daysBetween(k1, k2) { return Math.round((fromKey(k2) - fromKey(k1)) / 86400000); }
 function fmtShort(k) { return fromKey(k).toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 function fmtTime(ts) { return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+// Colour-coded P/C/F chips for food rows (protein green, carbs yellow, fat purple).
+function macroTags(o) {
+  const parts = [];
+  if (o.p) parts.push(`<span class="m-p">P${r1(o.p)}</span>`);
+  if (o.c) parts.push(`<span class="m-c">C${r1(o.c)}</span>`);
+  if (o.f) parts.push(`<span class="m-f">F${r1(o.f)}</span>`);
+  return parts.length ? " · " + parts.join(" ") : "";
+}
 function isWeekend(k) { const d = fromKey(k).getDay(); return d === 0 || d === 6; }
 
 // Subtle native haptics; silently no-ops in the browser / if the plugin is missing.
@@ -145,6 +153,11 @@ function loadState() {
       if (!s.settings.timer.program) s.settings.timer.program = [];
       if (!s.settings.weeklyReview) s.settings.weeklyReview = { enabled: false };
       if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
+      if (s.profile && s.profile.targetDeficit == null) {
+        const pr = s.profile, wt = (s.weights && s.weights.length) ? s.weights[s.weights.length - 1].kg : pr.startWeightKg;
+        s.profile.targetDeficit = Math.max(0, Math.round(bmr(pr.sex, wt, pr.heightCm, pr.age) * pr.activity) - pr.kcalTarget);
+      }
+      if (s.profile && s.profile.autoAdjust === undefined) s.profile.autoAdjust = false;
       if (s.goals) for (const g of s.goals) { if (!g.created) g.created = (s.profile && s.profile.startDate) || todayKey(); }
       if (!s.goals || !s.goals.length) {
         s.goals = [];
@@ -189,6 +202,47 @@ function currentWeight() {
 }
 function tdee() { const p = state.profile; return r0(bmr(p.sex, currentWeight(), p.heightCm, p.age) * p.activity); }
 function kcalFloor(sex) { return sex === "male" ? 1500 : 1200; }
+// Adaptive expenditure (real TDEE) from energy balance: over a trailing window,
+// TDEE = average intake − (weight-trend slope × 7700 kcal/kg). Needs enough
+// logged intake and a stable weight trend, else null.
+function adaptiveExpenditure(windowDays = 14) {
+  let sum = 0, days = 0;
+  for (let i = 0; i < windowDays; i++) {
+    const t = dayTotals(addDays(todayKey(), -i));
+    if (t.items > 0) { sum += t.kcal; days++; }
+  }
+  if (days < 7) return null;
+  const avgIntake = sum / days;
+  const ma = movingAvg(state.weights);
+  const cutoff = addDays(todayKey(), -windowDays);
+  const pts = ma.filter((e) => e.d >= cutoff);
+  if (pts.length < 3) return null;
+  const x0 = pts[0].d, xs = pts.map((p) => daysBetween(x0, p.d)), ys = pts.map((p) => p.v);
+  const n = xs.length, sx = xs.reduce((a, b) => a + b), sy = ys.reduce((a, b) => a + b);
+  const sxy = xs.reduce((s, x, i) => s + x * ys[i], 0), sxx = xs.reduce((s, x) => s + x * x, 0);
+  const den = n * sxx - sx * sx;
+  if (!den) return null;
+  const slope = (n * sxy - sx * sy) / den; // kg/day (negative = losing)
+  return { expenditure: r0(avgIntake - slope * 7700), avgIntake: r0(avgIntake), weeklyChange: r1(slope * 7), days };
+}
+function recommendedTarget(exp) {
+  const p = state.profile;
+  return Math.max(kcalFloor(p.sex), r0(exp - (p.targetDeficit || 0)));
+}
+// Weekly auto-adjust: once enabled and ≥7 days since the last adjust, retune the
+// calorie target to the fresh expenditure minus the user's chosen deficit.
+function maybeAutoAdjust() {
+  const p = state.profile;
+  if (!p || !p.autoAdjust) return;
+  const last = p.lastAutoAdjust || p.startDate || todayKey();
+  if (daysBetween(last, todayKey()) < 7) return;
+  const e = adaptiveExpenditure();
+  if (!e) return;
+  const rec = recommendedTarget(e.expenditure);
+  p.lastAutoAdjust = todayKey();
+  if (rec !== p.kcalTarget) { p.kcalTarget = rec; recordTargetChange(rec); toast(`Weekly check-in: target adjusted to ${rec} kcal`); }
+  save();
+}
 const PACE_TIERS = [
   { id: "sustainable", name: "Sustainable", deficit: 600, proteinPerKg: 1.9, note: "No strength loss expected — easiest to maintain long-term." },
   { id: "moderate", name: "Moderate", deficit: 850, proteinPerKg: 1.9, note: "Noticeable hunger; high protein protects muscle well." },
@@ -243,19 +297,33 @@ document.addEventListener("click", (e) => {
 $("#infoPopupClose").addEventListener("click", () => $("#infoPopup").classList.add("hidden"));
 $("#infoPopup").addEventListener("click", (e) => { if (e.target.id === "infoPopup") $("#infoPopup").classList.add("hidden"); });
 
-// Keep bottom sheets (esp. the food search dock) above the on-screen keyboard.
-// Native Capacitor keyboard resize can vary, so we drive a --kb inset ourselves
-// from the visual viewport and let CSS lift the sheet by that much.
+// Keyboard handling: rather than lifting the whole sheet (which shoves it
+// off-screen), we expose the keyboard height as --kb (used as scroll-area
+// padding) and simply scroll the focused field into view. The keyboard may
+// cover the rest of the panel — only the active field needs to stay visible.
 (function () {
   const vv = window.visualViewport;
-  if (!vv) return;
-  const update = () => {
-    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    document.documentElement.style.setProperty("--kb", kb + "px");
+  let kb = 0;
+  const revealFocused = () => {
+    const el = document.activeElement;
+    if (!el || !el.closest || !el.closest(".sheet")) return;
+    if (!/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
   };
-  vv.addEventListener("resize", update);
-  vv.addEventListener("scroll", update);
-  update();
+  if (vv) {
+    const update = () => {
+      kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--kb", kb + "px");
+      if (kb > 120) setTimeout(revealFocused, 60);
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+  }
+  // Fallback for runtimes without visualViewport resize on keyboard: scroll on focus.
+  document.addEventListener("focusin", (e) => {
+    if (e.target.closest && e.target.closest(".sheet")) setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 260);
+  });
 })();
 function renderGlossary() {
   $("#glossaryList").innerHTML = Object.keys(GLOSSARY).map((key) =>
@@ -386,6 +454,7 @@ function obFinish() {
     sex: ob.sex, age, heightCm: h, startWeightKg: w, startDate: todayKey(), activity: ob.activity,
     kcalTarget: Math.max(t - ob.deficit, kcalFloor(ob.sex)),
     proteinTarget: r0(w * 1.6), waterTargetMl: 2500, moveTarget: 200, eatBack: false,
+    targetDeficit: ob.deficit, autoAdjust: false,
   };
   state.profile.kcalTargetHistory = [{ from: todayKey(), kcal: state.profile.kcalTarget }];
   state.goals = [
@@ -481,9 +550,9 @@ function renderStats(k) {
 let trendMetric = "kcal", trendRange = 30;
 const TREND_META = {
   kcal: { lab: "Calories", unit: "kcal", color: "var(--orange)", target: () => budgetFor(todayKey()) },
-  p: { lab: "Protein", unit: "g", color: "var(--accent)", target: () => state.profile.proteinTarget },
-  c: { lab: "Carbs", unit: "g", color: "var(--blue)", target: () => null },
-  f: { lab: "Fat", unit: "g", color: "var(--purple)", target: () => null },
+  p: { lab: "Protein", unit: "g", color: "var(--c-protein)", target: () => state.profile.proteinTarget },
+  c: { lab: "Carbs", unit: "g", color: "var(--c-carbs)", target: () => null },
+  f: { lab: "Fat", unit: "g", color: "var(--c-fat)", target: () => null },
 };
 function renderTrends() {
   const meta = TREND_META[trendMetric], unit = meta.unit;
@@ -519,7 +588,32 @@ function renderTrends() {
     <div class="stat-box"><div class="v">${hi}</div><div class="k">highest day</div></div>
     <div class="stat-box"><div class="v">${lo}</div><div class="k">lowest day</div></div>`;
 }
-function openTrends() { renderTrends(); $("#trendsSheet").classList.remove("hidden"); }
+function renderExpenditureCard() {
+  const el = $("#expenditureCard"); if (!el) return;
+  const e = adaptiveExpenditure();
+  if (!e) {
+    el.innerHTML = `<p class="exp-need">Log food and weigh in for about 2 weeks and your real daily <b>expenditure</b> shows up here — worked out from how your weight actually moves against what you eat, so it beats any formula.</p>`;
+    return;
+  }
+  const p = state.profile, rec = recommendedTarget(e.expenditure), cur = targetFor(todayKey());
+  el.innerHTML = `
+    <div class="exp-top">
+      <div><span class="exp-lab">Your expenditure</span><div class="exp-val">${e.expenditure} <small>kcal/day</small></div></div>
+      <div class="exp-trend ${e.weeklyChange <= 0 ? "t-green" : "t-amber"}">${e.weeklyChange > 0 ? "+" : ""}${e.weeklyChange}<small> kg/wk</small></div>
+    </div>
+    <p class="exp-sub">Your real TDEE from the last ${e.days} logged days — more accurate than the ${tdee()} formula estimate, and it retunes itself as you log.</p>
+    <div class="exp-rec">
+      <div><span class="exp-lab">Suggested target</span> <strong>${rec} kcal</strong>${rec === cur ? ` <span class="t-green">✓ current</span>` : ` <span class="muted">(now ${cur})</span>`}</div>
+      ${rec !== cur ? `<button class="btn small" id="expApply">Use ${rec}</button>` : ""}
+    </div>`;
+  const b = $("#expApply");
+  if (b) b.addEventListener("click", () => {
+    p.kcalTarget = rec; recordTargetChange(rec); save();
+    haptic(); toast(`Target set to ${rec} kcal`);
+    renderExpenditureCard(); renderTrends(); renderToday();
+  });
+}
+function openTrends() { renderExpenditureCard(); renderTrends(); $("#trendsSheet").classList.remove("hidden"); }
 $("#ringsWrap").addEventListener("click", openTrends);
 $("#trendsClose").addEventListener("click", () => $("#trendsSheet").classList.add("hidden"));
 $("#trendsSheet").addEventListener("click", (e) => { if (e.target.id === "trendsSheet") $("#trendsSheet").classList.add("hidden"); });
@@ -820,6 +914,18 @@ $("#exAdd").addEventListener("click", () => {
 
 /* ---------- food sheet ---------- */
 let sheetMeal = "breakfast", sheetTab = "all", offResults = [], offLoading = false;
+// The meal-category chips (in the detail + quick sheets) just retarget sheetMeal,
+// so a food created any way (search, barcode, photo, quick add) can be dropped
+// into any meal without reopening from that meal's + button.
+function setupMealChips(sel) {
+  $$(sel + " button").forEach((b) => b.classList.toggle("active", b.dataset.meal === sheetMeal));
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("#detailMealChips button, #quickMealChips button");
+  if (!b) return;
+  sheetMeal = b.dataset.meal;
+  $$("#detailMealChips button, #quickMealChips button").forEach((x) => x.classList.toggle("active", x.dataset.meal === sheetMeal));
+});
 function openFoodSheet(meal) {
   sheetMeal = meal; sheetTab = "all"; offResults = [];
   $("#sheetTitle").textContent = "Add to " + meal.charAt(0).toUpperCase() + meal.slice(1);
@@ -862,7 +968,7 @@ function renderFoodList() {
   $("#foodList").innerHTML = shown.map((f, i) => {
     const fav = state.favs.includes(f.id);
     return `<button class="food-row" data-i="${i}">
-      <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${f.p ? ` · P ${r1(f.p)}g` : ""}</div></div>
+      <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${macroTags(f)}</div></div>
       <span class="fr-kcal">${r0(f.kcal)}</span>
       ${f.id ? `<span class="fav-btn ${fav ? "on" : ""}" data-fav="${f.id}">${fav ? "★" : "☆"}</span>` : ""}
       ${sheetTab === "custom" ? `<span class="fav-btn" data-editc="${f.id}">✎</span><span class="fav-btn" data-delc="${f.id}">✕</span>` : ""}</button>`;
@@ -893,7 +999,7 @@ function renderOFFList() {
   if (offLoading) return;
   if (!offResults.length) { $("#foodList").innerHTML = `<div class="food-empty">Search the Open Food Facts database<br>(needs internet — values per 100 g).</div>`; return; }
   $("#foodList").innerHTML = offResults.map((f, i) =>
-    `<button class="food-row" data-i="${i}"><div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.brand || "Open Food Facts")} · per 100 g · P ${r1(f.p)}g</div></div><span class="fr-kcal">${r0(f.kcal)}</span></button>`).join("");
+    `<button class="food-row" data-i="${i}"><div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.brand || "Open Food Facts")} · per 100 g${macroTags(f)}</div></div><span class="fr-kcal">${r0(f.kcal)}</span></button>`).join("");
   $$("#foodList .food-row").forEach((el) => el.addEventListener("click", () => openDetail(offResults[+el.dataset.i], "per100")));
 }
 
@@ -912,6 +1018,7 @@ function openDetail(food, mode) {
   $$("#detailUnitSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === "serv"));
   applyDetailUnit();
   $("#detailTime").value = nowTimeStr();
+  setupMealChips("#detailMealChips");
   $("#detailSheet").classList.remove("hidden");
 }
 function applyDetailUnit() {
@@ -938,7 +1045,7 @@ function detailFactor() {
 }
 function updateMacroPreview() {
   const f = detail.food, k = detailFactor();
-  $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div><span>${r1((f.f || 0) * k)}</span><label>fat</label></div><div><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div>`;
+  $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div class="mc-p"><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div class="mc-f"><span>${r1((f.f || 0) * k)}</span><label>fat</label></div><div class="mc-c"><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div>`;
 }
 $("#qtyInput").addEventListener("input", updateMacroPreview);
 function detailStep() { return detail.mode === "per100" ? 10 : detail.unit === "g" ? 5 : 0.5; }
@@ -952,6 +1059,13 @@ $("#detailAdd").addEventListener("click", () => {
     : detail.unit === "g" ? `${r0(parseFloat($("#qtyInput").value) || 0)} g`
     : (k === 1 ? (f.serving || "") : `${k} × ${f.serving || "serving"}`);
   const ts = timeToTs(viewDate, $("#detailTime").value);
+  // Barcode / online results (per-100g, not yet in the library) get saved so
+  // they're reusable next time — the meal gets the scaled portion.
+  if (detail.mode === "per100" && f.name && !f.id) {
+    const existing = state.customFoods.find((c) => c.name.toLowerCase() === f.name.toLowerCase());
+    if (existing) Object.assign(existing, { serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
+    else state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
+  }
   addFoodItem({ name: f.name, kcal: f.kcal * k, p: (f.p || 0) * k, c: (f.c || 0) * k, f: (f.f || 0) * k, qtyLabel, ts }, f);
   $("#detailSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
 });
@@ -978,9 +1092,11 @@ let totalWTouched = false, servWTouched = false;
 function openQuick(mode, prefill) {
   quickMode = mode;
   manualEstimated = false;
-  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Add food" : "Quick add";
+  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Quick Add" : "Quick add";
   $("#qDescribeWrap").classList.toggle("hidden", mode !== "manual");
   $("#qDesc").value = "";
+  $("#quickMealWrap").classList.toggle("hidden", !(mode === "manual" || mode === "ai"));
+  setupMealChips("#quickMealChips");
   $("#qServingWrap").classList.toggle("hidden", mode !== "custom" && mode !== "manual");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
@@ -1057,7 +1173,7 @@ function servingFactor() {
 function updateMealWeightPreview() {
   const t = ingredientTotals(), factor = servingFactor();
   const per = { kcal: t.kcal * factor, p: t.p * factor, f: t.f * factor, c: t.c * factor };
-  $("#ingTotals").innerHTML = `<div><span>${r0(per.kcal)}</span><label>kcal</label></div><div><span>${r1(per.p)}</span><label>protein</label></div><div><span>${r1(per.f)}</span><label>fat</label></div><div><span>${r1(per.c)}</span><label>carbs</label></div>`;
+  $("#ingTotals").innerHTML = `<div><span>${r0(per.kcal)}</span><label>kcal</label></div><div class="mc-p"><span>${r1(per.p)}</span><label>protein</label></div><div class="mc-f"><span>${r1(per.f)}</span><label>fat</label></div><div class="mc-c"><span>${r1(per.c)}</span><label>carbs</label></div>`;
   $("#ingBatchTotals").textContent = `Whole batch: ${r0(t.kcal)} kcal · P ${r1(t.p)}g · F ${r1(t.f)}g · C ${r1(t.c)}g`;
 }
 $("#mealTotalWeight").addEventListener("input", () => { totalWTouched = true; updateMealWeightPreview(); });
@@ -1141,9 +1257,9 @@ $("#quickSave").addEventListener("click", () => {
     const ts = timeToTs(viewDate, $("#qTime").value);
     let src = null;
     const servingLabel = (quickMode === "manual" ? $("#qServing").value.trim() : "") || (aiServingG ? `${aiServingG} g` : "");
-    // Photo/AI estimates and AI-filled manual entries are saved (or refreshed) as
-    // custom foods so they show up in recents and quick chips next time.
-    if (quickMode === "ai" || (quickMode === "manual" && manualEstimated)) {
+    // Save the food to the library so it's reusable: photo/AI estimates always,
+    // and any named Quick Add (blank-name one-offs stay out of the library).
+    if (quickMode === "ai" || (quickMode === "manual" && $("#qName").value.trim())) {
       const serving = servingLabel || "1 serving";
       const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
       if (existing) {
@@ -1945,6 +2061,7 @@ function attachSwipe(li, content) {
     const open = dx < -W / 2;
     content.style.transform = `translateX(${open ? -W : 0}px)`;
     li._open = open; _openSwipe = open ? li : (_openSwipe === li ? null : _openSwipe);
+    if (open) haptic("light");
     blockClick();
   };
   content.addEventListener("pointerup", finish);
@@ -1953,6 +2070,12 @@ function attachSwipe(li, content) {
 document.addEventListener("pointerdown", (e) => {
   if (_openSwipe && !_openSwipe.contains(e.target)) closeSwipe(_openSwipe);
 }, true);
+
+// Global light haptic tick on interactive taps — a subtle native feel (no-ops
+// in the browser). Buttons cover chips, tabs, food rows, add/qty/swipe actions.
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest && e.target.closest("button, .toggle, input[type=checkbox], input[type=range], input[type=time]")) haptic("light");
+}, { passive: true });
 
 /* ---------- chart tap tooltip ---------- */
 const chartTip = document.createElement("div");
@@ -2231,6 +2354,7 @@ function renderSettings() {
   const p = state.profile;
   $("#setKcal").value = p.kcalTarget; $("#setProtein").value = p.proteinTarget; $("#setWater").value = p.waterTargetMl;
   $("#setMove").value = p.moveTarget; $("#setActivity").value = String(p.activity); $("#setEatBack").checked = !!p.eatBack;
+  $("#setAutoAdjust").checked = !!p.autoAdjust;
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
   $("#setApiKey").value = state.settings.apiKey || "";
@@ -2372,11 +2496,12 @@ $("#suppAddBtn").addEventListener("click", () => {
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile, kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
   if (kcal && kcal < floor) { toast(`Minimum safe target: ${floor} kcal`); $("#setKcal").value = floor; return; }
-  if (kcal && kcal !== p.kcalTarget) { p.kcalTarget = kcal; recordTargetChange(kcal); }
+  if (kcal && kcal !== p.kcalTarget) { p.kcalTarget = kcal; p.targetDeficit = Math.max(0, tdee() - kcal); recordTargetChange(kcal); }
   p.proteinTarget = parseInt($("#setProtein").value, 10) || p.proteinTarget;
   p.waterTargetMl = parseInt($("#setWater").value, 10) || p.waterTargetMl;
   p.moveTarget = parseInt($("#setMove").value, 10) || p.moveTarget;
   p.activity = parseFloat($("#setActivity").value); p.eatBack = $("#setEatBack").checked;
+  p.autoAdjust = $("#setAutoAdjust").checked;
   state.settings.waterEnabled = $("#setWaterEnabled").checked;
   save(); toggleTargetsForm(false); renderSettings(); renderToday(); toast("Saved");
 });
@@ -2457,7 +2582,9 @@ $("#resetBtn").addEventListener("click", () => {
 /* ---------- init ---------- */
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
 function startApp() {
-  $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons(); switchView("today");
+  $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons();
+  maybeAutoAdjust();
+  switchView("today");
   checkGoals();
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
   if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
