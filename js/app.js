@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.15";
+const APP_VERSION = "2.16";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -29,9 +29,12 @@ function macroTags(o) {
 }
 function isWeekend(k) { const d = fromKey(k).getDay(); return d === 0 || d === 6; }
 
-// Subtle native haptics; silently no-ops in the browser / if the plugin is missing.
+// Subtle native haptics; silently no-ops in the browser / if the plugin is missing
+// or if the user has turned haptics off in Settings.
+function hapticsEnabled() { return !(state && state.settings) || state.settings.haptics !== false; }
 function haptic(style) {
   try {
+    if (!hapticsEnabled()) return;
     const H = window.capacitorHaptics;
     if (!H || !isNativeApp()) return;
     H.Haptics.impact({ style: style === "light" ? H.ImpactStyle.Light : H.ImpactStyle.Medium });
@@ -137,7 +140,7 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     supplements: defaultSupplements(),
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -158,6 +161,9 @@ function loadState() {
         s.profile.targetDeficit = Math.max(0, Math.round(bmr(pr.sex, wt, pr.heightCm, pr.age) * pr.activity) - pr.kcalTarget);
       }
       if (s.profile && s.profile.autoAdjust === undefined) s.profile.autoAdjust = false;
+      if (s.profile && !s.profile.birthYear && s.profile.age) s.profile.birthYear = new Date().getFullYear() - s.profile.age;
+      if (s.settings.haptics === undefined) s.settings.haptics = true;
+      if (!s.settings.weekStart) s.settings.weekStart = "mon";
       if (s.goals) for (const g of s.goals) { if (!g.created) g.created = (s.profile && s.profile.startDate) || todayKey(); }
       if (!s.goals || !s.goals.length) {
         s.goals = [];
@@ -451,7 +457,7 @@ function obFinish() {
   const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), age = parseInt($("#obAge").value, 10);
   const t = r0(bmr(ob.sex, w, h, age) * ob.activity);
   state.profile = {
-    sex: ob.sex, age, heightCm: h, startWeightKg: w, startDate: todayKey(), activity: ob.activity,
+    sex: ob.sex, age, birthYear: new Date().getFullYear() - age, heightCm: h, startWeightKg: w, startDate: todayKey(), activity: ob.activity,
     kcalTarget: Math.max(t - ob.deficit, kcalFloor(ob.sex)),
     proteinTarget: r0(w * 1.6), waterTargetMl: 2500, moveTarget: 200, eatBack: false,
     targetDeficit: ob.deficit, autoAdjust: false,
@@ -525,9 +531,15 @@ function drawRings(m) {
   ];
   let circles = "";
   rings.forEach((rg) => {
-    const C = 2 * Math.PI * rg.r, pct = clamp(rg.pct, 0, 1);
+    const C = 2 * Math.PI * rg.r, pct = rg.pct, first = clamp(pct, 0, 1);
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="12"/>`;
-    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/>`;
+    circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - first)}"/>`;
+    // Over budget: a second lap wraps over the first in a darker shade of the
+    // same colour, so exceeding the target reads at a glance.
+    if (pct > 1) {
+      const over = Math.min(pct - 1, 1);
+      circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - over)}" style="filter:brightness(0.6) saturate(1.3)"/>`;
+    }
   });
   $("#ringsWrap").innerHTML =
     `<svg viewBox="0 0 190 190">${circles}</svg>
@@ -564,7 +576,7 @@ function renderTrends() {
   const ma = movingAvg(entries); // entries are one-per-day, so this is a 7-day smoothed line
   const tgt = meta.target();
   const goals = tgt != null ? [{ v: tgt, achieved: false }] : [];
-  $("#trendChart").innerHTML = lineChart({ entries, ma, goals, unit, projDays: 0, rawLine: true, color: meta.color });
+  $("#trendChart").innerHTML = lineChart({ entries, ma, goals, unit, projDays: 0, rawLine: true, color: meta.color, goalColor: "var(--text)", goalLabel: trendMetric === "kcal" ? "target" : "" });
   $("#trendLegend").style.setProperty("--ma-color", meta.color);
   $$("#trendMetricChips button").forEach((b) => b.classList.toggle("active", b.dataset.m === trendMetric));
   $$("#trendRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === trendRange));
@@ -601,7 +613,7 @@ function renderExpenditureCard() {
       <div><span class="exp-lab">Your expenditure</span><div class="exp-val">${e.expenditure} <small>kcal/day</small></div></div>
       <div class="exp-trend ${e.weeklyChange <= 0 ? "t-green" : "t-amber"}">${e.weeklyChange > 0 ? "+" : ""}${e.weeklyChange}<small> kg/wk</small></div>
     </div>
-    <p class="exp-sub">Your real TDEE from the last ${e.days} logged days — more accurate than the ${tdee()} formula estimate, and it retunes itself as you log.</p>
+    <p class="exp-sub">Your real TDEE from the last ${e.days} logged days — more accurate than the ${tdee()} formula estimate, and it retunes itself as you log. Suggested target keeps your chosen ${p.targetDeficit} kcal/day deficit.</p>
     <div class="exp-rec">
       <div><span class="exp-lab">Suggested target</span> <strong>${rec} kcal</strong>${rec === cur ? ` <span class="t-green">✓ current</span>` : ` <span class="muted">(now ${cur})</span>`}</div>
       ${rec !== cur ? `<button class="btn small" id="expApply">Use ${rec}</button>` : ""}
@@ -807,14 +819,29 @@ $("#calClose").addEventListener("click", () => $("#calSheet").classList.add("hid
 $("#calSheet").addEventListener("click", (e) => { if (e.target.id === "calSheet") $("#calSheet").classList.add("hidden"); });
 $("#calPrev").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
 $("#calNext").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
+// Swipe the calendar left/right to change month.
+(function setupCalSwipe() {
+  const host = $("#calSheet"); if (!host) return;
+  let sx = 0, sy = 0, tracking = false;
+  host.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; tracking = true; }, { passive: true });
+  host.addEventListener("touchend", (e) => {
+    if (!tracking) return; tracking = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    calMonth.setMonth(calMonth.getMonth() + (dx < 0 ? 1 : -1)); haptic("light"); renderCalendar();
+  }, { passive: true });
+})();
 function renderCalendar() {
   $("#calMonthLabel").textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const year = calMonth.getFullYear(), month = calMonth.getMonth();
+  const monStart = (state.settings.weekStart || "mon") === "mon";
   const firstDow = new Date(year, month, 1).getDay();
+  const offset = monStart ? (firstDow + 6) % 7 : firstDow; // leading blanks
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const todayK = todayKey();
-  let html = ["S", "M", "T", "W", "T", "F", "S"].map((d) => `<div class="cal-dow">${d}</div>`).join("");
-  for (let i = 0; i < firstDow; i++) html += `<div class="cal-cell empty"></div>`;
+  const dows = monStart ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"];
+  let html = dows.map((d) => `<div class="cal-dow">${d}</div>`).join("");
+  for (let i = 0; i < offset; i++) html += `<div class="cal-cell empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
     const dk = toKey(new Date(year, month, d));
     const isLogged = loggedDay(dk);
@@ -1095,8 +1122,9 @@ function openQuick(mode, prefill) {
   $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Quick Add" : "Quick add";
   $("#qDescribeWrap").classList.toggle("hidden", mode !== "manual");
   $("#qDesc").value = "";
-  $("#quickMealWrap").classList.toggle("hidden", !(mode === "manual" || mode === "ai"));
-  setupMealChips("#quickMealChips");
+  // No meal picker here anymore — Quick Add/Photo save to the library, then the
+  // user logs from there (detail sheet) like any other food.
+  $("#quickMealWrap").classList.add("hidden");
   $("#qServingWrap").classList.toggle("hidden", mode !== "custom" && mode !== "manual");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
@@ -1106,7 +1134,7 @@ function openQuick(mode, prefill) {
   if (mode === "ai") $("#qNote").textContent = (aiServingG ? `≈ ${aiServingG} g portion. ` : "") + "AI's best guess — tweak anything, then add.";
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
-  $("#quickSave").textContent = mode === "custom" ? "Save food" : mode === "edit" ? "Save changes" : "Add";
+  $("#quickSave").textContent = mode === "edit" ? "Save changes" : "Save to library";
   customIngredients = []; ingBasis = "100g"; totalWTouched = false; servWTouched = false; editingCustomFoodId = null;
   $$("#ingBasisChips button").forEach((b) => b.classList.toggle("active", b.dataset.basis === "100g"));
   $("#ingQtyLabelText").textContent = "Qty (g)"; $("#ingQty").placeholder = "100";
@@ -1220,8 +1248,8 @@ $("#quickClose").addEventListener("click", () => $("#quickSheet").classList.add(
 $("#quickSheet").addEventListener("click", (e) => { if (e.target.id === "quickSheet") $("#quickSheet").classList.add("hidden"); });
 let editingCustomFoodId = null;
 $("#quickSave").addEventListener("click", () => {
-  const name = $("#qName").value.trim() || (quickMode === "custom" ? "" : quickMode === "manual" ? "Food" : "Quick add");
-  if (quickMode === "custom" && !name) return toast("Give it a name");
+  const name = $("#qName").value.trim();
+  if (!name) return toast("Give it a name");
   let food, servingWeight = 0;
   if (quickMode === "custom" && qCustomMode === "ingredients") {
     if (!customIngredients.length) return toast("Add at least one ingredient");
@@ -1254,24 +1282,18 @@ $("#quickSave").addEventListener("click", () => {
     dayLog(viewDate).meals[editTarget.mealId][editTarget.i] = { ...food, qtyLabel: "", ts };
     save(); renderToday(); $("#quickSheet").classList.add("hidden"); toast("Updated");
   } else {
-    const ts = timeToTs(viewDate, $("#qTime").value);
-    let src = null;
-    const servingLabel = (quickMode === "manual" ? $("#qServing").value.trim() : "") || (aiServingG ? `${aiServingG} g` : "");
-    // Save the food to the library so it's reusable: photo/AI estimates always,
-    // and any named Quick Add (blank-name one-offs stay out of the library).
-    if (quickMode === "ai" || (quickMode === "manual" && $("#qName").value.trim())) {
-      const serving = servingLabel || "1 serving";
-      const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
-      if (existing) {
-        Object.assign(existing, { serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
-        src = existing;
-      } else {
-        src = { id: "c" + Date.now(), name: food.name, serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f };
-        state.customFoods.unshift(src);
-      }
-    }
-    addFoodItem({ ...food, qtyLabel: servingLabel, ts }, src);
-    $("#quickSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
+    // Quick Add / Photo(ai): create-then-log is split like Custom food — save the
+    // food to the library and show it there; the user taps it to add to a meal.
+    const serving = $("#qServing").value.trim() || (aiServingG ? `${aiServingG} g` : "1 serving");
+    const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
+    if (existing) Object.assign(existing, { serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
+    else state.customFoods.unshift({ id: "c" + Date.now(), name: food.name, serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
+    save();
+    $("#quickSheet").classList.add("hidden");
+    sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
+    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet(sheetMeal);
+    renderFoodList();
+    toast("Saved to your library — tap it to add");
   }
 });
 function openEditCustomFood(id) {
@@ -1480,7 +1502,18 @@ async function lookupBarcode(code) {
     const p = data.product, n = p.nutriments || {};
     if (n["energy-kcal_100g"] == null) { $("#scanStatus").textContent = "No calorie data for that product."; setTimeout(() => resumeScan(instance), 1200); return; }
     await closeScanner();
-    openDetail({ name: p.product_name || "Product", brand: (p.brands || "").split(",")[0], kcal: +n["energy-kcal_100g"] || 0, p: +n["proteins_100g"] || 0, c: +n["carbohydrates_100g"] || 0, f: +n["fat_100g"] || 0 }, "per100");
+    // Save the scanned product to the library (per 100 g); the user logs it from
+    // there like any other food — same create-then-log split as Custom.
+    const name = p.product_name || "Product";
+    const food = { name, serving: "100 g", kcal: +n["energy-kcal_100g"] || 0, p: +n["proteins_100g"] || 0, c: +n["carbohydrates_100g"] || 0, f: +n["fat_100g"] || 0 };
+    const existing = state.customFoods.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) Object.assign(existing, food);
+    else state.customFoods.unshift({ id: "c" + Date.now(), ...food });
+    save();
+    sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
+    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet(sheetMeal);
+    renderFoodList();
+    toast(`${name} saved to your library — tap it to add`);
   } catch (e) { $("#scanStatus").textContent = "Lookup failed — check your connection."; setTimeout(() => resumeScan(instance), 1200); }
 }
 function resumeScan(instance) {
@@ -1818,7 +1851,7 @@ function renderGoalCards() {
   renderIcons($("#achievedGoalCards"));
 }
 
-function lineChart({ entries, ma, goals, unit, projDays, rawLine, color }) {
+function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel }) {
   const line = color || "var(--accent)";
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
@@ -1849,8 +1882,8 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine, color }) {
   const rawPath = rawLine ? `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${Xn(xNum(e)).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5" stroke-linejoin="round"/>` : "";
   const maPath = ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("");
   const goalLines = gls.map((g) => {
-    const color = g.achieved ? "var(--accent)" : "var(--amber)";
-    return `<line x1="${L}" y1="${Y(g.v).toFixed(1)}" x2="${W - R}" y2="${Y(g.v).toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 4" opacity="${g.achieved ? ".55" : ".8"}"/><text x="${W - R}" y="${(Y(g.v) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${color}">${g.achieved ? "✓ " : ""}${r1(g.v)} ${unit}</text>`;
+    const color = g.achieved ? "var(--accent)" : (goalColor || "var(--amber)");
+    return `<line x1="${L}" y1="${Y(g.v).toFixed(1)}" x2="${W - R}" y2="${Y(g.v).toFixed(1)}" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 4" opacity="${g.achieved ? ".55" : ".8"}"/><text x="${W - R}" y="${(Y(g.v) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="${color}">${g.achieved ? "✓ " : (goalLabel ? goalLabel + " " : "")}${r1(g.v)} ${unit}</text>`;
   }).join("");
   const projLine = proj ? `<line x1="${Xn(proj.x1).toFixed(1)}" y1="${Y(proj.v1).toFixed(1)}" x2="${Xn(proj.x2).toFixed(1)}" y2="${Y(proj.v2).toFixed(1)}" stroke="${line}" stroke-width="1.5" stroke-dasharray="2 4" opacity=".7"/>` : "";
   const first = entries[0], last = entries[entries.length - 1];
@@ -2074,42 +2107,66 @@ document.addEventListener("pointerdown", (e) => {
 // Global light haptic tick on interactive taps — a subtle native feel (no-ops
 // in the browser). Buttons cover chips, tabs, food rows, add/qty/swipe actions.
 document.addEventListener("pointerdown", (e) => {
-  if (e.target.closest && e.target.closest("button, .toggle, input[type=checkbox], input[type=range], input[type=time]")) haptic("light");
+  if (hapticsEnabled() && e.target.closest && e.target.closest("button, .toggle, input[type=checkbox], input[type=range], input[type=time]")) haptic("light");
 }, { passive: true });
+
+// Lock the page behind an open sheet so it can't be scrolled by mistake.
+(function () {
+  const sync = () => {
+    const open = [...document.querySelectorAll(".sheet")].some((s) => !s.classList.contains("hidden"));
+    document.body.classList.toggle("sheet-open", open);
+  };
+  const obs = new MutationObserver(sync);
+  document.querySelectorAll(".sheet").forEach((s) => obs.observe(s, { attributes: true, attributeFilter: ["class"] }));
+})();
 
 /* ---------- chart tap tooltip ---------- */
 const chartTip = document.createElement("div");
 chartTip.className = "chart-tip hidden";
 document.body.appendChild(chartTip);
-document.addEventListener("click", (e) => {
-  let el = e.target.closest("[data-tip]");
-  // Tapping a tiny dot exactly is fiddly, so a tap anywhere inside a chart
-  // snaps to the nearest data point by x — works for every chart at once.
+// Show the tooltip for the [data-tip] nearest the given x within a chart svg.
+function showChartTip(target, clientX, autoHide) {
+  let el = target.closest && target.closest("[data-tip]");
   if (!el) {
-    const svg = e.target.closest("svg");
+    const svg = target.closest && target.closest("svg");
     const tips = svg ? [...svg.querySelectorAll("[data-tip]")] : [];
     if (tips.length) {
       let best = null;
       for (const t of tips) {
         const r = t.getBoundingClientRect();
-        const d = Math.abs(r.left + r.width / 2 - e.clientX);
+        const d = Math.abs(r.left + r.width / 2 - clientX);
         if (!best || d < best.d) best = { el: t, d };
       }
       el = best.el;
     }
   }
-  if (el) {
-    const r = el.getBoundingClientRect();
-    chartTip.textContent = el.dataset.tip;
-    chartTip.classList.remove("hidden");
-    chartTip.style.left = clamp(r.left + r.width / 2, 60, innerWidth - 60) + "px";
-    chartTip.style.top = Math.max(r.top - 8, 40) + "px";
-    clearTimeout(chartTip._t);
-    chartTip._t = setTimeout(() => chartTip.classList.add("hidden"), 2400);
-  } else if (!chartTip.classList.contains("hidden")) {
-    chartTip.classList.add("hidden");
-  }
-});
+  if (!el) { if (!chartTip.classList.contains("hidden")) chartTip.classList.add("hidden"); return false; }
+  const r = el.getBoundingClientRect();
+  chartTip.textContent = el.dataset.tip;
+  chartTip.classList.remove("hidden");
+  chartTip.style.left = clamp(r.left + r.width / 2, 60, innerWidth - 60) + "px";
+  chartTip.style.top = Math.max(r.top - 8, 40) + "px";
+  clearTimeout(chartTip._t);
+  if (autoHide) chartTip._t = setTimeout(() => chartTip.classList.add("hidden"), 2400);
+  return true;
+}
+document.addEventListener("click", (e) => { showChartTip(e.target, e.clientX, true); });
+// Drag along a chart to scrub the tooltip across points.
+let _scrubSvg = null;
+document.addEventListener("pointerdown", (e) => {
+  const svg = e.target.closest && e.target.closest("svg");
+  if (svg && svg.querySelector("[data-tip]")) { _scrubSvg = svg; showChartTip(e.target, e.clientX, false); }
+}, { passive: true });
+document.addEventListener("pointermove", (e) => {
+  if (!_scrubSvg) return;
+  showChartTip(_scrubSvg, e.clientX, false);
+}, { passive: true });
+document.addEventListener("pointerup", () => {
+  if (!_scrubSvg) return;
+  _scrubSvg = null;
+  clearTimeout(chartTip._t);
+  chartTip._t = setTimeout(() => chartTip.classList.add("hidden"), 2400);
+}, { passive: true });
 
 /* ---------- Summary detail (full screen) ---------- */
 // Bars diverging from a centered zero line: negative = green (deficit / loss),
@@ -2256,6 +2313,40 @@ function renderSleepSteps() {
     ? `Steps add ≈ ${stepKcal(steps)} kcal to today's Active total. Turn on "Eat back active calories" in Settings to add that to your eating budget. If you also log a walk, avoid double-counting — log only non-walking workouts alongside steps.`
     : "Log sleep and steps to keep an eye on recovery and daily movement.";
 }
+function simpleBars(days, vals, fmt, color, goal) {
+  const W = 340, H = 140, L = 34, R = 8, T = 12, B = 22;
+  const present = vals.filter((v) => v != null);
+  if (!present.length) return `<div class="food-empty">Nothing logged yet.</div>`;
+  const max = Math.max(...present, goal || 0, 1), n = days.length;
+  const bw = (W - L - R) / n, gap = Math.min(4, bw * 0.15), rx = Math.min(3, bw / 3.5);
+  const Y = (v) => T + (1 - v / max) * (H - T - B);
+  const bars = days.map((dk, i) => {
+    const v = vals[i]; if (v == null) return "";
+    return `<rect data-tip="${fmtShort(dk)} · ${fmt(v)}" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${color}" opacity="${dk === todayKey() ? 1 : 0.72}"/>`;
+  }).join("");
+  const goalLine = goal ? `<line x1="${L}" y1="${Y(goal).toFixed(1)}" x2="${W - R}" y2="${Y(goal).toFixed(1)}" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".4"/><text x="${W - R}" y="${(Y(goal) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${fmt(goal)}</text>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>${bars}${goalLine}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
+}
+function renderSleepStepsHistory() {
+  const days = []; for (let i = 29; i >= 0; i--) days.push(addDays(todayKey(), -i));
+  const stepsOf = (dk) => { const l = state.logs[dk]; return l && l.steps != null ? l.steps : null; };
+  const sleepOf = (dk) => { const l = state.logs[dk]; return l && l.sleepH != null ? l.sleepH : null; };
+  const stepVals = days.map(stepsOf), sleepVals = days.map(sleepOf);
+  $("#stepsChart").innerHTML = simpleBars(days, stepVals, (v) => v.toLocaleString() + " steps", "var(--accent)", 8000);
+  $("#sleepChart").innerHTML = simpleBars(days, sleepVals, (v) => v + " h", "var(--blue)", 8);
+  const sv = stepVals.filter((v) => v != null), slv = sleepVals.filter((v) => v != null);
+  const avg = (a, d) => a.length ? (d ? r1 : r0)(a.reduce((x, y) => x + y, 0) / a.length) : null;
+  $("#stepsStats").innerHTML = `<div class="stat-box"><div class="v">${sv.length ? avg(sv).toLocaleString() : "—"}</div><div class="k">avg / day (${sv.length}d)</div></div><div class="stat-box"><div class="v">${sv.length ? Math.max(...sv).toLocaleString() : "—"}</div><div class="k">best day</div></div>`;
+  $("#sleepStats").innerHTML = `<div class="stat-box"><div class="v">${slv.length ? avg(slv, 1) + " h" : "—"}</div><div class="k">avg / night (${slv.length}d)</div></div><div class="stat-box"><div class="v">${slv.length ? Math.max(...slv) + " h" : "—"}</div><div class="k">longest</div></div>`;
+  const rows = [];
+  for (let i = 0; i < 90; i++) { const dk = addDays(todayKey(), -i), l = state.logs[dk]; if (l && (l.steps != null || l.sleepH != null)) rows.push({ dk, steps: l.steps, sleepH: l.sleepH }); }
+  $("#sleepStepsList").innerHTML = rows.length
+    ? rows.slice(0, 20).map((r) => `<li><span class="row-label">${r.dk === todayKey() ? "Today" : fmtShort(r.dk)}</span><span class="ing-right"><span class="d">${r.sleepH != null ? r.sleepH + " h sleep" : ""}${r.sleepH != null && r.steps != null ? " · " : ""}${r.steps != null ? r.steps.toLocaleString() + " steps" : ""}</span></span></li>`).join("")
+    : `<li class="muted" style="border-top:none">Nothing logged yet.</li>`;
+}
+$("#sleepStepsHistBtn").addEventListener("click", () => { renderSleepStepsHistory(); $("#sleepStepsSheet").classList.remove("hidden"); });
+$("#sleepStepsHistClose").addEventListener("click", () => $("#sleepStepsSheet").classList.add("hidden"));
+$("#sleepStepsSheet").addEventListener("click", (e) => { if (e.target.id === "sleepStepsSheet") $("#sleepStepsSheet").classList.add("hidden"); });
 function renderCalcSheet() {
   const p = state.profile, cw = currentWeight(), sexWord = p.sex === "male" ? "male" : "female";
   const base = p.sex === "male" ? 5 : -161;
@@ -2355,6 +2446,9 @@ function renderSettings() {
   $("#setKcal").value = p.kcalTarget; $("#setProtein").value = p.proteinTarget; $("#setWater").value = p.waterTargetMl;
   $("#setMove").value = p.moveTarget; $("#setActivity").value = String(p.activity); $("#setEatBack").checked = !!p.eatBack;
   $("#setAutoAdjust").checked = !!p.autoAdjust;
+  $("#setAge").value = p.age; $("#setSex").value = p.sex;
+  $("#setWeekStart").value = state.settings.weekStart || "mon";
+  $("#setHaptics").checked = state.settings.haptics !== false;
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
   $("#setApiKey").value = state.settings.apiKey || "";
@@ -2494,15 +2588,21 @@ $("#suppAddBtn").addEventListener("click", () => {
   save(); toggleSuppForm(false); renderSuppSettings(); toast("Supplement added");
 });
 $("#settingsSave").addEventListener("click", () => {
-  const p = state.profile, kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
+  const p = state.profile;
+  p.age = parseInt($("#setAge").value, 10) || p.age;
+  p.birthYear = new Date().getFullYear() - p.age;
+  p.sex = $("#setSex").value;
+  p.activity = parseFloat($("#setActivity").value);
+  const kcal = parseInt($("#setKcal").value, 10), floor = kcalFloor(p.sex);
   if (kcal && kcal < floor) { toast(`Minimum safe target: ${floor} kcal`); $("#setKcal").value = floor; return; }
   if (kcal && kcal !== p.kcalTarget) { p.kcalTarget = kcal; p.targetDeficit = Math.max(0, tdee() - kcal); recordTargetChange(kcal); }
   p.proteinTarget = parseInt($("#setProtein").value, 10) || p.proteinTarget;
   p.waterTargetMl = parseInt($("#setWater").value, 10) || p.waterTargetMl;
   p.moveTarget = parseInt($("#setMove").value, 10) || p.moveTarget;
-  p.activity = parseFloat($("#setActivity").value); p.eatBack = $("#setEatBack").checked;
+  p.eatBack = $("#setEatBack").checked;
   p.autoAdjust = $("#setAutoAdjust").checked;
   state.settings.waterEnabled = $("#setWaterEnabled").checked;
+  state.settings.weekStart = $("#setWeekStart").value;
   save(); toggleTargetsForm(false); renderSettings(); renderToday(); toast("Saved");
 });
 let editingGoalId = null;
@@ -2561,6 +2661,10 @@ $("#setReduceMotion").addEventListener("change", () => {
   state.settings.reduceMotion = $("#setReduceMotion").checked;
   save(); applyMotionPref();
 });
+$("#setHaptics").addEventListener("change", () => {
+  state.settings.haptics = $("#setHaptics").checked;
+  save(); haptic();
+});
 
 $("#exportBtn").addEventListener("click", () => {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -2582,6 +2686,8 @@ $("#resetBtn").addEventListener("click", () => {
 /* ---------- init ---------- */
 $$(".tab").forEach((t) => t.addEventListener("click", () => switchView(t.dataset.view)));
 function startApp() {
+  // Keep age current from birth year so it increments on its own each year.
+  if (state.profile && state.profile.birthYear) state.profile.age = new Date().getFullYear() - state.profile.birthYear;
   $("#app").classList.remove("hidden"); applyTheme(); applyMotionPref(); renderIcons();
   maybeAutoAdjust();
   switchView("today");

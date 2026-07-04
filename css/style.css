@@ -417,7 +417,10 @@ textarea { resize: none; line-height: 1.5; }
 .tab .ic { width: 21px; height: 21px; }
 
 /* ===== Sheets ===== */
-.sheet { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end; justify-content: center; animation: fadeIn 0.18s var(--ease); }
+.sheet { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end; justify-content: center; animation: fadeIn 0.18s var(--ease); overscroll-behavior: contain; }
+/* Lock the page behind an open sheet (no accidental background scroll). */
+body.sheet-open { overflow: hidden; }
+.food-list, .sheet-scroll { overscroll-behavior: contain; }
 .sheet-panel {
   width: 100%; max-width: 480px; background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--r-lg) var(--r-lg) 0 0; padding: 16px 16px calc(env(safe-area-inset-bottom) + 14px);

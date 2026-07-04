@@ -265,7 +265,7 @@
     <main id="view-body" class="view hidden">
       <header class="page-header"><h1>Body</h1></header>
       <section class="card" id="bodySummaryCard">
-        <div class="card-head"><h3>At a glance</h3></div>
+        <div class="card-head"><h3>Body Statistics</h3></div>
         <div class="stat-grid" id="bodySummary"></div>
         <button class="btn ghost full" id="calcOpenBtn" style="margin-top:12px">How your numbers are calculated</button>
       </section>
@@ -286,7 +286,7 @@
         <ul class="entry-list" id="waistList"></ul>
       </section>
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3><span class="muted">today</span></div>
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3><button class="btn small" id="sleepStepsHistBtn">History</button></div>
         <div class="dual-entry">
           <div class="de-field">
             <label class="field-label"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
@@ -330,6 +330,10 @@
             <label>Protein target (g) <input type="number" id="setProtein" inputmode="numeric"></label>
             <label>Water target (ml) <input type="number" id="setWater" inputmode="numeric"></label>
             <label>Active-calorie goal <input type="number" id="setMove" inputmode="numeric"></label>
+            <label>Age <input type="number" id="setAge" inputmode="numeric"></label>
+            <label>Sex
+              <select id="setSex"><option value="male">Male</option><option value="female">Female</option></select>
+            </label>
             <label>Activity
               <select id="setActivity">
                 <option value="1.2">Sedentary</option>
@@ -337,6 +341,9 @@
                 <option value="1.55">Active</option>
                 <option value="1.725">Very active</option>
               </select>
+            </label>
+            <label>Week starts
+              <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
             </label>
           </div>
           <div class="switch-row">
@@ -409,6 +416,10 @@
         <div class="switch-row">
           <div><div class="switch-title">Reduce motion</div><div class="muted">Turns off sliding/fade animations</div></div>
           <label class="switch"><input type="checkbox" id="setReduceMotion"><span class="knob"></span></label>
+        </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Haptic feedback</div><div class="muted">Subtle taps on interactions (device only)</div></div>
+          <label class="switch"><input type="checkbox" id="setHaptics"><span class="knob"></span></label>
         </div>
       </section>
       <section class="card">
@@ -708,7 +719,7 @@
   <div id="trendsSheet" class="sheet hidden">
     <div class="sheet-panel full">
       <div class="sheet-head">
-        <h2>Expenditure</h2>
+        <h2>Intake Trends</h2>
         <button class="sheet-close" id="trendsClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
@@ -765,6 +776,27 @@
         <div id="sumWeightDiff" class="chart"></div>
         <p class="field-label">Totals</p>
         <div class="stat-grid" id="sumFullStats"></div>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Sleep & steps history ===== -->
+  <div id="sleepStepsSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Sleep &amp; Steps</h2>
+        <button class="sheet-close" id="sleepStepsHistClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <p class="field-label">Steps</p>
+        <div id="stepsChart" class="chart"></div>
+        <div class="stat-grid" id="stepsStats" style="margin-bottom:8px"></div>
+        <p class="field-label">Sleep</p>
+        <div id="sleepChart" class="chart"></div>
+        <div class="stat-grid" id="sleepStats"></div>
+        <p class="field-label">Recent</p>
+        <ul id="sleepStepsList" class="entry-list"></ul>
         <div style="height:24px"></div>
       </div>
     </div>
