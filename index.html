@@ -177,9 +177,11 @@
       <section class="card">
         <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
         <div class="chips" id="weightRangeChips">
-          <button data-d="14">14d</button>
-          <button data-d="30" class="active">30d</button>
-          <button data-d="90">90d</button>
+          <button data-d="7">1W</button>
+          <button data-d="14">2W</button>
+          <button data-d="30" class="active">1M</button>
+          <button data-d="90">3M</button>
+          <button data-d="180">6M</button>
         </div>
         <div id="weightChart" class="chart"></div>
         <p class="legend purple"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
@@ -191,10 +193,11 @@
       <section class="card">
         <div class="card-head"><h3>Calories</h3></div>
         <div class="chips" id="calRangeChips">
-          <button data-d="7">7d</button>
-          <button data-d="14" class="active">14d</button>
-          <button data-d="30">30d</button>
-          <button data-d="90">90d</button>
+          <button data-d="7">1W</button>
+          <button data-d="14">2W</button>
+          <button data-d="30" class="active">1M</button>
+          <button data-d="90">3M</button>
+          <button data-d="180">6M</button>
         </div>
         <div id="calChart" class="chart"></div>
       </section>
@@ -449,6 +452,7 @@
         <h2 id="sheetTitle">Add food</h2>
         <button class="sheet-close" id="sheetClose"><span class="ic" data-ic="x"></span></button>
       </div>
+      <input type="search" id="foodSearch" class="food-search-top" placeholder="Search for a food…" autocomplete="off">
       <div class="chips" id="foodTabs">
         <button data-tab="all" class="active">All</button>
         <button data-tab="recent">Recents</button>
@@ -457,15 +461,11 @@
         <button data-tab="online">Online</button>
       </div>
       <div id="foodList" class="food-list"></div>
-      <div class="sheet-actions">
+      <div class="sheet-actions sheet-actions-4">
         <button class="btn ghost" id="scanBtn"><span class="ic" data-ic="barcode"></span>Scan</button>
         <button class="btn ghost" id="aiBtn"><span class="ic" data-ic="sparkle"></span>Photo</button>
-        <button class="btn ghost" id="describeBtn"><span class="ic" data-ic="mic"></span>Describe</button>
-        <button class="btn ghost" id="quickAddBtn"><span class="ic" data-ic="bolt"></span>Quick</button>
-        <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="plus"></span>Custom</button>
-      </div>
-      <div class="search-dock">
-        <input type="search" id="foodSearch" placeholder="Search for a food…" autocomplete="off">
+        <button class="btn ghost" id="addManualBtn"><span class="ic" data-ic="plus"></span>Add manually</button>
+        <button class="btn ghost" id="customFoodBtn"><span class="ic" data-ic="layers"></span>Custom</button>
       </div>
       <input type="file" id="aiPhotoInput" accept="image/*" capture="environment" hidden>
     </div>
@@ -484,18 +484,6 @@
   </div>
 
   <!-- ===== Describe food (AI) ===== -->
-  <div id="describeSheet" class="sheet hidden">
-    <div class="sheet-panel small">
-      <div class="sheet-head">
-        <h2>Describe your meal</h2>
-        <button class="sheet-close" id="describeClose"><span class="ic" data-ic="x"></span></button>
-      </div>
-      <p class="muted" style="margin-bottom:10px">Type it or tap the mic on your keyboard and just say it — e.g. "large chicken burrito with rice, beans and cheese". AI estimates the macros; you can tweak before adding.</p>
-      <textarea id="describeText" rows="3" placeholder="What did you eat?"></textarea>
-      <button class="btn primary full" id="describeGo">Estimate</button>
-    </div>
-  </div>
-
   <!-- ===== Barcode scanner ===== -->
   <div id="scanSheet" class="sheet hidden">
     <div class="sheet-panel">
@@ -505,9 +493,12 @@
       </div>
       <div class="scan-wrap">
         <div id="scanReader"></div>
-        <div class="scan-frame"></div>
+        <div class="scan-frame"><i></i><i></i><i></i><i></i></div>
       </div>
       <p class="muted center" id="scanStatus">Point the camera at a barcode</p>
+      <button class="btn ghost full" id="scanPhotoBtn"><span class="ic" data-ic="camera"></span>Not detecting? Take a photo instead</button>
+      <input type="file" id="scanPhotoInput" accept="image/*" capture="environment" hidden>
+      <div id="scanFileReader"></div>
     </div>
   </div>
 
@@ -545,6 +536,12 @@
         <button class="sheet-close" id="quickClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll">
+        <div id="qDescribeWrap" class="hidden qai-block">
+          <label class="field-label">Describe it and let AI estimate</label>
+          <textarea id="qDesc" rows="2" placeholder="e.g. large chicken burrito with rice, beans and cheese — or tap your keyboard mic and say it"></textarea>
+          <button class="btn ghost full" id="qEstimate"><span class="ic" data-ic="sparkle"></span>Estimate with AI</button>
+          <p class="qai-or"><span>or enter it directly</span></p>
+        </div>
         <p class="muted hidden" id="qNote" style="margin-bottom:10px"></p>
         <div class="form-grid">
           <label>Name <input type="text" id="qName" placeholder="e.g. Lunch out"></label>
@@ -707,6 +704,7 @@
         </div>
         <div class="chips" id="trendRangeChips">
           <button data-d="7">1W</button>
+          <button data-d="14">2W</button>
           <button data-d="30" class="active">1M</button>
           <button data-d="90">3M</button>
           <button data-d="180">6M</button>

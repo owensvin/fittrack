@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.13";
+const APP_VERSION = "2.14";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -59,6 +59,7 @@ const ICONS = {
   sliders: '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.4" fill="var(--bg)"/><circle cx="15" cy="16" r="2.4" fill="var(--bg)"/>',
   barcode: '<line x1="4" y1="6" x2="4" y2="18"/><line x1="7" y1="6" x2="7" y2="18"/><line x1="10" y1="6" x2="10" y2="18"/><line x1="14" y1="6" x2="14" y2="18"/><line x1="17" y1="6" x2="17" y2="18"/><line x1="20" y1="6" x2="20" y2="18"/>',
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+  layers: '<polygon points="12 3 21 8 12 13 3 8"/><polyline points="3 12 12 17 21 12"/>',
   bolt: '<polygon points="13 3 5 13 11 13 10 21 18 10 12 10"/>',
   flame: '<path d="M12 2c1 3-3 4-3 8a3 3 0 0 0 6 0c1.4 1 2 2.8 2 4.5a5 5 0 0 1-10 0C7 10 10 8 12 2z"/>',
   target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/>',
@@ -634,6 +635,7 @@ function renderMeals(k) {
     e.stopPropagation();
     log.meals[b.dataset.meal].splice(+b.dataset.i, 1); save(); renderToday();
   }));
+  makeSwipeable($("#mealList"));
 }
 
 function renderExercises(k) {
@@ -651,6 +653,7 @@ function renderExercises(k) {
   $$("#exerciseList .fi-del").forEach((b) => b.addEventListener("click", () => {
     log.walks.splice(+b.dataset.i, 1); save(); renderToday();
   }));
+  makeSwipeable($("#exerciseList"));
 }
 
 function renderWater(k) {
@@ -968,13 +971,17 @@ function addFoodItem(item, src) {
 let quickMode = "quick";
 let editTarget = null;
 let aiServingG = 0;
+let manualEstimated = false;
 const KJ_PER_KCAL = 4.184;
 let qCustomMode = "simple", customIngredients = [], ingBasis = "100g", calUnit = "kcal";
 let totalWTouched = false, servWTouched = false;
 function openQuick(mode, prefill) {
   quickMode = mode;
-  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : "Quick add";
-  $("#qServingWrap").classList.toggle("hidden", mode !== "custom");
+  manualEstimated = false;
+  $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Add food" : "Quick add";
+  $("#qDescribeWrap").classList.toggle("hidden", mode !== "manual");
+  $("#qDesc").value = "";
+  $("#qServingWrap").classList.toggle("hidden", mode !== "custom" && mode !== "manual");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
   $("#qTimeWrap").classList.toggle("hidden", mode === "custom");
@@ -1037,6 +1044,7 @@ function renderIngredientList() {
   $$("#ingredientList .fi-del").forEach((b) => b.addEventListener("click", () => {
     customIngredients.splice(+b.dataset.i, 1); renderIngredientList();
   }));
+  makeSwipeable($("#ingredientList"));
   if (!totalWTouched) $("#mealTotalWeight").value = defaultTotalWeight() || "";
   if (!servWTouched) $("#mealServingWeight").value = $("#mealTotalWeight").value;
   updateMealWeightPreview();
@@ -1072,13 +1080,31 @@ function openEditFood(mealId, i) {
   editTarget = { mealId, i };
   openQuick("edit", { name: item.name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, ts: item.ts });
 }
-$("#quickAddBtn").addEventListener("click", () => openQuick("quick"));
+$("#addManualBtn").addEventListener("click", () => openQuick("manual"));
 $("#customFoodBtn").addEventListener("click", () => openQuick("custom"));
+$("#qEstimate").addEventListener("click", async () => {
+  const desc = $("#qDesc").value.trim();
+  if (!desc) return toast("Describe what you ate first");
+  const btn = $("#qEstimate"), orig = btn.innerHTML;
+  btn.disabled = true; btn.textContent = "Estimating…";
+  try {
+    const est = await estimateDescription(desc);
+    $("#qName").value = est.name || "";
+    $("#qKcal").value = est.kcal || "";
+    $("#qProt").value = est.p || ""; $("#qCarb").value = est.c || ""; $("#qFat").value = est.f || "";
+    aiServingG = est.serving_g || 0;
+    if (aiServingG) $("#qServing").value = `${aiServingG} g`;
+    manualEstimated = true;
+    setCalUnit("kcal");
+    toast("Filled from AI — tweak, then add");
+  } catch (err) { toast("AI failed: " + (err.message || "error")); }
+  btn.disabled = false; btn.innerHTML = orig;
+});
 $("#quickClose").addEventListener("click", () => $("#quickSheet").classList.add("hidden"));
 $("#quickSheet").addEventListener("click", (e) => { if (e.target.id === "quickSheet") $("#quickSheet").classList.add("hidden"); });
 let editingCustomFoodId = null;
 $("#quickSave").addEventListener("click", () => {
-  const name = $("#qName").value.trim() || (quickMode === "custom" ? "" : "Quick add");
+  const name = $("#qName").value.trim() || (quickMode === "custom" ? "" : quickMode === "manual" ? "Food" : "Quick add");
   if (quickMode === "custom" && !name) return toast("Give it a name");
   let food, servingWeight = 0;
   if (quickMode === "custom" && qCustomMode === "ingredients") {
@@ -1114,10 +1140,11 @@ $("#quickSave").addEventListener("click", () => {
   } else {
     const ts = timeToTs(viewDate, $("#qTime").value);
     let src = null;
-    if (quickMode === "ai") {
-      // AI estimates are dictated/photographed custom foods: save (or refresh)
-      // them in the custom list so they show up in recents and quick chips.
-      const serving = aiServingG ? `${aiServingG} g` : "1 serving";
+    const servingLabel = (quickMode === "manual" ? $("#qServing").value.trim() : "") || (aiServingG ? `${aiServingG} g` : "");
+    // Photo/AI estimates and AI-filled manual entries are saved (or refreshed) as
+    // custom foods so they show up in recents and quick chips next time.
+    if (quickMode === "ai" || (quickMode === "manual" && manualEstimated)) {
+      const serving = servingLabel || "1 serving";
       const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
       if (existing) {
         Object.assign(existing, { serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
@@ -1127,7 +1154,7 @@ $("#quickSave").addEventListener("click", () => {
         state.customFoods.unshift(src);
       }
     }
-    addFoodItem({ ...food, qtyLabel: quickMode === "ai" && aiServingG ? `${aiServingG} g` : "", ts }, src);
+    addFoodItem({ ...food, qtyLabel: servingLabel, ts }, src);
     $("#quickSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
   }
 });
@@ -1250,34 +1277,42 @@ async function estimateDescription(desc) {
   if (state.settings.apiKey) return aiEstimateText(desc);
   throw new Error("on-device AI unavailable on this device — add an API key in Settings as a fallback");
 }
-$("#describeBtn").addEventListener("click", () => {
-  $("#describeText").value = "";
-  $("#describeSheet").classList.remove("hidden");
-  $("#describeText").focus();
-});
-$("#describeClose").addEventListener("click", () => $("#describeSheet").classList.add("hidden"));
-$("#describeSheet").addEventListener("click", (e) => { if (e.target.id === "describeSheet") $("#describeSheet").classList.add("hidden"); });
-$("#describeGo").addEventListener("click", async () => {
-  const desc = $("#describeText").value.trim();
-  if (!desc) return toast("Describe what you ate first");
-  const btn = $("#describeGo");
-  btn.disabled = true; btn.textContent = "Estimating…";
-  try {
-    const est = await estimateDescription(desc);
-    $("#describeSheet").classList.add("hidden");
-    openQuick("ai", est);
-  } catch (err) { toast("AI failed: " + (err.message || "error")); }
-  btn.disabled = false; btn.textContent = "Estimate";
-});
+// (The standalone "Describe" sheet was folded into the merged "Add manually"
+// flow — its Estimate button lives in #quickSheet now, see #qEstimate above.)
 
 /* ---------- barcode scan ---------- */
 // Safari/WKWebView (the native app's runtime) doesn't implement the
 // BarcodeDetector API, so scanning is done with html5-qrcode (pure JS/canvas
 // decoding, no native API dependency) instead.
 let html5Qr = null, scanBusy = false;
+function barcodeFormats() {
+  return [
+    Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+  ];
+}
 $("#scanBtn").addEventListener("click", openScanner);
 $("#scanClose").addEventListener("click", closeScanner);
 $("#scanSheet").addEventListener("click", (e) => { if (e.target.id === "scanSheet") closeScanner(); });
+$("#scanPhotoBtn").addEventListener("click", () => $("#scanPhotoInput").click());
+$("#scanPhotoInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file || typeof Html5Qrcode === "undefined") return;
+  scanBusy = true;
+  $("#scanStatus").textContent = "Reading photo…";
+  try { html5Qr && html5Qr.pause(true); } catch (_) {}
+  const tmp = new Html5Qrcode("scanFileReader", { formatsToSupport: barcodeFormats(), verbose: false });
+  try {
+    const code = await tmp.scanFile(file, false);
+    try { await tmp.clear(); } catch (_) {}
+    lookupBarcode(code);
+  } catch (err) {
+    try { await tmp.clear(); } catch (_) {}
+    $("#scanStatus").textContent = "No barcode found in that photo — fill the frame, hold steady, good light.";
+    scanBusy = false;
+    try { html5Qr && html5Qr.resume(); } catch (_) {}
+  }
+});
 async function openScanner() {
   if (typeof Html5Qrcode === "undefined") { toast("Barcode scan unavailable here — try Online search"); return; }
   $("#scanSheet").classList.remove("hidden");
@@ -1285,10 +1320,7 @@ async function openScanner() {
   scanBusy = false;
   try {
     html5Qr = new Html5Qrcode("scanReader", {
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
-      ],
+      formatsToSupport: barcodeFormats(),
       // Let the browser's own native decoder handle frames when it exists
       // (faster than the JS/canvas fallback); WKWebView has none, so it
       // still falls back to the bundled zxing decoder there.
@@ -1298,10 +1330,10 @@ async function openScanner() {
     await html5Qr.start(
       { facingMode: "environment" },
       {
-        fps: 20,
-        // Barcodes are wide and short — a wide/short capture box samples
-        // more of the code per frame than a square one.
-        qrbox: { width: 300, height: 110 },
+        fps: 15,
+        // No qrbox: scanning the full frame (a) removes html5-qrcode's own
+        // shaded overlay so only our single guide frame shows, and (b) lets a
+        // barcode be picked up anywhere in view rather than only a centre band.
         aspectRatio: 1.777,
         disableFlip: true,
         videoConstraints: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -1309,7 +1341,7 @@ async function openScanner() {
       (code) => { if (!scanBusy) lookupBarcode(code); },
       () => {},
     );
-    $("#scanStatus").textContent = "Point the camera at a barcode";
+    $("#scanStatus").textContent = "Point the camera at a barcode — or take a photo below";
   } catch (err) {
     $("#scanStatus").textContent = "Camera blocked. Allow camera access or use Online search.";
   }
@@ -1597,6 +1629,7 @@ function renderTraining() {
     const l = state.logs[b.dataset.dk]; if (l && l.walks) l.walks.splice(+b.dataset.i, 1);
     save(); renderTraining();
   }));
+  makeSwipeable($("#sessionList"));
 }
 
 /* ---------- Progress ---------- */
@@ -1717,7 +1750,7 @@ function inRange(entries, days) {
   const from = addDays(todayKey(), -(days - 1));
   return entries.filter((e) => e.d >= from);
 }
-let weightRange = 30, calRange = 14;
+let weightRange = 30, calRange = 30;
 function renderWeightChart() {
   const fullMa = movingAvg(state.weights);
   const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
@@ -1753,22 +1786,36 @@ function renderWaistChart() {
 function renderCalChart() {
   const W = 340, H = 150, L = 34, R = 8, T = 12, B = 22;
   const n = calRange;
-  const days = []; for (let i = n - 1; i >= 0; i--) days.push(addDays(todayKey(), -i));
-  const vals = days.map((d) => dayTotals(d).kcal);
-  // Each day is judged against — and the line drawn from — the target that
-  // applied on that day, so old targets remain visible history.
-  const targets = days.map((d) => targetFor(d));
-  const max = Math.max(...targets.map((t) => t * 1.25), ...vals, 1), bw = (W - L - R) / n;
+  const allDays = []; for (let i = n - 1; i >= 0; i--) allDays.push(addDays(todayKey(), -i));
+  // Longer ranges pack too many daily bars to read, so aggregate into weekly
+  // averages (avg of the days actually logged) once past ~5 weeks.
+  const bucketDays = n > 35 ? 7 : 1;
+  const buckets = [];
+  for (let i = 0; i < allDays.length; i += bucketDays) {
+    const chunk = allDays.slice(i, i + bucketDays);
+    const logged = chunk.filter((d) => dayTotals(d).items > 0);
+    const kcal = logged.length ? logged.reduce((s, d) => s + dayTotals(d).kcal, 0) / logged.length : 0;
+    const target = chunk.reduce((s, d) => s + targetFor(d), 0) / chunk.length;
+    buckets.push({ from: chunk[0], to: chunk[chunk.length - 1], kcal, target });
+  }
+  const m = buckets.length;
+  const max = Math.max(...buckets.map((b) => b.target * 1.25), ...buckets.map((b) => b.kcal), 1), bw = (W - L - R) / m;
   const rx = Math.min(3, bw / 3.5);
   const Y = (v) => T + (1 - v / max) * (H - T - B);
   const gap = Math.min(4, bw * 0.15);
-  const bars = days.map((d, i) => { const v = vals[i]; if (!v) return ""; const over = v > targets[i]; return `<rect data-tip="${fmtShort(d)} · ${r0(v)} / ${targets[i]} kcal" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(v)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${d === todayKey() ? 1 : 0.7}"/>`; }).join("");
+  const bars = buckets.map((b, i) => {
+    if (!b.kcal) return "";
+    const over = b.kcal > b.target, isToday = b.to === todayKey() && bucketDays === 1;
+    const tip = bucketDays === 1 ? `${fmtShort(b.from)} · ${r0(b.kcal)} / ${r0(b.target)} kcal` : `${fmtShort(b.from)}–${fmtShort(b.to)} · avg ${r0(b.kcal)} / ${r0(b.target)} kcal`;
+    return `<rect data-tip="${tip}" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(b.kcal).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(H - B - Y(b.kcal)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="${over ? "var(--amber)" : "var(--accent)"}" opacity="${isToday ? 1 : 0.7}"/>`;
+  }).join("");
   let targetPath = "";
-  for (let i = 0; i < n; i++) {
-    const x0 = L + i * bw, x1 = L + (i + 1) * bw, y = Y(targets[i]).toFixed(1);
+  for (let i = 0; i < m; i++) {
+    const x0 = L + i * bw, x1 = L + (i + 1) * bw, y = Y(buckets[i].target).toFixed(1);
     targetPath += `${i === 0 ? `M${x0.toFixed(1)},${y}` : `L${x0.toFixed(1)},${y}`} L${x1.toFixed(1)},${y} `;
   }
-  $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>${bars}<path d="${targetPath}" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".45"/><text x="${W - R}" y="${(Y(targets[n - 1]) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${targets[n - 1]}</text><text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(days[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`;
+  const lastT = r0(buckets[m - 1].target);
+  $("#calChart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>${bars}<path d="${targetPath}" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="5 4" opacity=".45"/><text x="${W - R}" y="${(Y(buckets[m - 1].target) - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">target ${lastT}</text><text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(allDays[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${bucketDays === 1 ? "today" : fmtShort(allDays[allDays.length - 1])}</text></svg>`;
   $$("#calRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === calRange));
 }
 $("#calRangeChips").addEventListener("click", (e) => {
@@ -1827,12 +1874,107 @@ function renderWeekCard() {
   $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));
 }
 
+/* ---------- swipe-left-to-delete ---------- */
+// Post-processes a rendered list: wraps each row that has a `.fi-del` so it can
+// be swiped left to reveal a red Delete button (guards against accidental taps).
+// The original hidden `.fi-del` still carries the delete logic — the red button
+// just forwards a click to it, so every list keeps its existing handler.
+let _openSwipe = null;
+function closeSwipe(li) {
+  if (!li) return;
+  const c = li.querySelector(".swipe-content");
+  if (c) { c.style.transition = "transform .2s var(--ease)"; c.style.transform = "translateX(0)"; }
+  li._open = false;
+  if (_openSwipe === li) _openSwipe = null;
+}
+function makeSwipeable(container) {
+  if (!container) return;
+  container.querySelectorAll("li").forEach((li) => {
+    const del = li.querySelector(".fi-del");
+    if (!del || li.dataset.swipe) return;
+    li.dataset.swipe = "1";
+    li.classList.add("swipe-row");
+    const cs = getComputedStyle(li);
+    const content = document.createElement("div");
+    content.className = "swipe-content";
+    content.style.alignItems = cs.alignItems;
+    content.style.justifyContent = cs.justifyContent;
+    content.style.gap = cs.gap;
+    content.style.paddingTop = cs.paddingTop;
+    content.style.paddingBottom = cs.paddingBottom;
+    li.style.paddingTop = "0"; li.style.paddingBottom = "0";
+    while (li.firstChild) content.appendChild(li.firstChild);
+    li.appendChild(content);
+    const red = document.createElement("button");
+    red.className = "swipe-del"; red.type = "button"; red.textContent = "Delete";
+    red.addEventListener("click", (e) => { e.stopPropagation(); del.click(); });
+    li.appendChild(red);
+    attachSwipe(li, content);
+  });
+}
+function attachSwipe(li, content) {
+  const W = 84;
+  let sx = 0, sy = 0, dx = 0, active = false, decided = false, horiz = false, wasOpen = false;
+  content.addEventListener("pointerdown", (e) => {
+    if (_openSwipe && _openSwipe !== li) closeSwipe(_openSwipe);
+    sx = e.clientX; sy = e.clientY; active = true; decided = false; horiz = false; wasOpen = !!li._open;
+    content.style.transition = "none";
+  });
+  content.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!decided) {
+      if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+      decided = true; horiz = Math.abs(mx) > Math.abs(my);
+      if (horiz) { try { content.setPointerCapture(e.pointerId); } catch (_) {} }
+    }
+    if (!horiz) return;
+    let x = (wasOpen ? -W : 0) + mx;
+    if (x > 0) x = 0; else if (x < -W) x = -W + (x + W) * 0.3;
+    dx = x; content.style.transform = `translateX(${x}px)`;
+  });
+  const blockClick = () => {
+    const b = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    content.addEventListener("click", b, { capture: true, once: true });
+    setTimeout(() => content.removeEventListener("click", b, true), 320);
+  };
+  const finish = () => {
+    if (!active) return; active = false;
+    if (!horiz) { if (wasOpen) { closeSwipe(li); blockClick(); } return; }
+    content.style.transition = "transform .2s var(--ease)";
+    const open = dx < -W / 2;
+    content.style.transform = `translateX(${open ? -W : 0}px)`;
+    li._open = open; _openSwipe = open ? li : (_openSwipe === li ? null : _openSwipe);
+    blockClick();
+  };
+  content.addEventListener("pointerup", finish);
+  content.addEventListener("pointercancel", finish);
+}
+document.addEventListener("pointerdown", (e) => {
+  if (_openSwipe && !_openSwipe.contains(e.target)) closeSwipe(_openSwipe);
+}, true);
+
 /* ---------- chart tap tooltip ---------- */
 const chartTip = document.createElement("div");
 chartTip.className = "chart-tip hidden";
 document.body.appendChild(chartTip);
 document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-tip]");
+  let el = e.target.closest("[data-tip]");
+  // Tapping a tiny dot exactly is fiddly, so a tap anywhere inside a chart
+  // snaps to the nearest data point by x — works for every chart at once.
+  if (!el) {
+    const svg = e.target.closest("svg");
+    const tips = svg ? [...svg.querySelectorAll("[data-tip]")] : [];
+    if (tips.length) {
+      let best = null;
+      for (const t of tips) {
+        const r = t.getBoundingClientRect();
+        const d = Math.abs(r.left + r.width / 2 - e.clientX);
+        if (!best || d < best.d) best = { el: t, d };
+      }
+      el = best.el;
+    }
+  }
   if (el) {
     const r = el.getBoundingClientRect();
     chartTip.textContent = el.dataset.tip;
@@ -1972,6 +2114,7 @@ function renderBody() {
     state.waists = state.waists.filter((w) => w.d !== b.dataset.cd);
     save(); renderBody(); toast("Waist entry removed");
   }));
+  makeSwipeable($("#weightList")); makeSwipeable($("#waistList"));
   renderSleepSteps();
   renderPhotos();
 }
@@ -2214,6 +2357,7 @@ function renderSuppSettings() {
     state.supplements = state.supplements.filter((s) => s.id !== b.dataset.id);
     save(); renderSuppSettings();
   }));
+  makeSwipeable($("#suppSettingsList"));
 }
 function toggleSuppForm(show) { $("#suppForm").classList.toggle("hidden", !show); }
 $("#suppNewBtn").addEventListener("click", () => toggleSuppForm(true));
@@ -2268,6 +2412,7 @@ function renderGoalSettings() {
     if (editingGoalId === b.dataset.id) resetGoalForm();
     save(); renderGoalSettings();
   }));
+  makeSwipeable($("#goalSettingsList"));
 }
 $("#goalAddBtn").addEventListener("click", () => {
   const label = $("#goalLabel").value.trim() || "Goal";

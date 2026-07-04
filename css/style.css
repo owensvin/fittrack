@@ -441,9 +441,16 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .fav-btn { border: none; background: none; font-size: var(--fs-md); cursor: pointer; padding: 4px; color: var(--muted2); }
 .fav-btn.on { color: var(--amber); }
 .food-empty { text-align: center; color: var(--muted); padding: 36px 16px; font-size: var(--fs-sm); line-height: 1.6; }
-/* Search pinned to the bottom of the food sheet, directly above the keyboard */
-.search-dock { padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--border); flex-shrink: 0; }
-.search-dock input { width: 100%; }
+/* Search sits at the top of the food sheet (near the category chips); the
+   --kb lift below keeps the whole sheet — and therefore this input — above
+   the keyboard even when only a few results match. */
+.food-search-top { width: 100%; margin-bottom: 4px; flex-shrink: 0; }
+/* merged "Add manually" sheet: AI-describe block + divider */
+.qai-block textarea { width: 100%; margin-bottom: 8px; }
+.qai-or { display: flex; align-items: center; text-align: center; color: var(--muted2); font-size: var(--fs-2xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 6px; }
+.qai-or::before, .qai-or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.qai-or span { padding: 0 10px; }
+.sheet-actions.sheet-actions-4 { grid-template-columns: repeat(4, 1fr); }
 /* Lift the whole sheet above the on-screen keyboard (--kb set from visualViewport) */
 .sheet { padding-bottom: var(--kb, 0px); box-sizing: border-box; transition: padding-bottom var(--t-fast) var(--ease); }
 .sheet-panel { max-height: min(88dvh, calc(100dvh - var(--kb, 0px) - 16px)); }
@@ -456,7 +463,13 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 #scanReader { width: 100%; height: 100%; }
 #scanReader video { width: 100% !important; height: 100% !important; object-fit: cover; }
 #scanReader img, #scanReader canvas { display: none !important; }
-.scan-frame { position: absolute; left: 12%; right: 12%; top: 36%; bottom: 36%; border: 2px solid rgba(255,255,255,0.85); border-radius: var(--r-md); box-shadow: 0 0 0 999px rgba(0,0,0,0.25); pointer-events: none; }
+.scan-frame { position: absolute; left: 12%; right: 12%; top: 34%; bottom: 34%; box-shadow: 0 0 0 999px rgba(0,0,0,0.30); pointer-events: none; }
+.scan-frame i { position: absolute; width: 26px; height: 26px; border: 3px solid rgba(255,255,255,0.92); }
+.scan-frame i:nth-child(1) { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: var(--r-sm) 0 0 0; }
+.scan-frame i:nth-child(2) { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 var(--r-sm) 0 0; }
+.scan-frame i:nth-child(3) { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 var(--r-sm); }
+.scan-frame i:nth-child(4) { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 var(--r-sm) 0; }
+#scanFileReader { display: none; }
 
 /* ===== Qty sheet ===== */
 .qty-row { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
@@ -476,6 +489,12 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .range-label { font-size: var(--fs-base); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ===== Chart tap tooltip ===== */
+/* Swipe-left-to-delete rows (built by makeSwipeable) */
+.swipe-row { position: relative; overflow: hidden; }
+.swipe-content { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--card); position: relative; z-index: 1; transform: translateX(0); touch-action: pan-y; }
+.swipe-content.between { justify-content: space-between; }
+.swipe-content .fi-del { display: none !important; }
+.swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; border: none; background: var(--red); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .chart-tip {
   position: fixed; z-index: 99; transform: translate(-50%, -100%);
   background: var(--card2); color: var(--text); border: 1px solid var(--border);
