@@ -1,5 +1,5 @@
-# Generates the FitTrack app icon: an interlocked ribbon "X" mark in light
-# blue on a black background (no grid lines).
+# Generates the FitTrack app icon: a bold "FT" monogram in the app's green
+# on a black background.
 # Run from repo root: powershell -File scripts/make-icons.ps1
 Add-Type -AssemblyName System.Drawing
 
@@ -7,63 +7,49 @@ $root = Split-Path -Parent $PSScriptRoot
 $iconsDir = Join-Path $root "icons"
 New-Item -ItemType Directory -Force -Path $iconsDir | Out-Null
 
+function Add-RoundedRect {
+  param($path, [double]$x, [double]$y, [double]$w, [double]$h, [double]$r)
+  $d = $r * 2
+  $path.AddArc($x, $y, $d, $d, 180, 90)
+  $path.AddArc($x + $w - $d, $y, $d, $d, 270, 90)
+  $path.AddArc($x + $w - $d, $y + $h - $d, $d, $d, 0, 90)
+  $path.AddArc($x, $y + $h - $d, $d, $d, 90, 90)
+  $path.CloseFigure()
+}
+
 function New-Mark {
   param([int]$size, [string]$outPath)
 
   $bmp = New-Object System.Drawing.Bitmap($size, $size)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-  $g.Clear([System.Drawing.Color]::FromArgb(255, 9, 9, 11))
+  $g.Clear([System.Drawing.Color]::FromArgb(255, 8, 8, 10))
 
-  $blue = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 110, 168, 240))
   $s = $size / 1024.0
-  $c = 512 * $s
+  $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+    (New-Object System.Drawing.PointF(0, 0)),
+    (New-Object System.Drawing.PointF(0, $size)),
+    [System.Drawing.Color]::FromArgb(255, 63, 232, 115),
+    [System.Drawing.Color]::FromArgb(255, 8, 195, 67)
+  )
 
-  # geometry (unrotated, horizontal ribbon centered on c)
-  $half = (620 * $s) / 2   # half ribbon length
-  $w = (150 * $s) / 2      # half ribbon width
-  $d = 62 * $s             # V-notch depth at the ends
-  $gap = 118 * $s          # half-gap where the split ribbon yields to the full one
-
-  function Fill-Rot {
-    param($pts, [double]$angle)
+  # F: vertical stem, top bar, shorter middle bar. T: top bar, centered stem.
+  $bars = @(
+    @(182, 232, 90, 560, 20),
+    @(182, 232, 300, 90, 20),
+    @(182, 472, 220, 80, 16),
+    @(542, 232, 300, 90, 20),
+    @(647, 232, 90, 560, 20)
+  )
+  foreach ($b in $bars) {
     $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $path.AddPolygon([System.Drawing.PointF[]]$pts)
-    $m = New-Object System.Drawing.Drawing2D.Matrix
-    $m.RotateAt($angle, (New-Object System.Drawing.PointF($c, $c)))
-    $path.Transform($m)
-    $g.FillPath($blue, $path)
-    $path.Dispose(); $m.Dispose()
+    Add-RoundedRect $path ($b[0] * $s) ($b[1] * $s) ($b[2] * $s) ($b[3] * $s) ($b[4] * $s)
+    $g.FillPath($brush, $path)
+    $path.Dispose()
   }
 
-  # diagonal 1 (45deg): one continuous ribbon, V-notched at both ends
-  Fill-Rot @(
-    (New-Object System.Drawing.PointF(($c - $half), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c + $half), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c + $half - $d), $c)),
-    (New-Object System.Drawing.PointF(($c + $half), ($c + $w))),
-    (New-Object System.Drawing.PointF(($c - $half), ($c + $w))),
-    (New-Object System.Drawing.PointF(($c - $half + $d), $c))
-  ) 45
-
-  # diagonal 2 (-45deg): split into two segments so ribbon 1 appears to pass over
-  Fill-Rot @(
-    (New-Object System.Drawing.PointF(($c + $gap), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c + $half), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c + $half - $d), $c)),
-    (New-Object System.Drawing.PointF(($c + $half), ($c + $w))),
-    (New-Object System.Drawing.PointF(($c + $gap), ($c + $w)))
-  ) -45
-  Fill-Rot @(
-    (New-Object System.Drawing.PointF(($c - $gap), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c - $half), ($c - $w))),
-    (New-Object System.Drawing.PointF(($c - $half + $d), $c)),
-    (New-Object System.Drawing.PointF(($c - $half), ($c + $w))),
-    (New-Object System.Drawing.PointF(($c - $gap), ($c + $w)))
-  ) -45
-
   $bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
-  $g.Dispose(); $bmp.Dispose()
+  $brush.Dispose(); $g.Dispose(); $bmp.Dispose()
 }
 
 New-Mark -size 1024 -outPath (Join-Path $iconsDir "icon-1024.png")
