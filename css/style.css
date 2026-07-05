@@ -113,12 +113,13 @@ button { font: inherit; -webkit-user-select: none; user-select: none; touch-acti
 /* shared press feedback — the one place "buttery" lives */
 .btn, .add-btn, .round-btn, .day-nav, .quick-chip, .tab, .chips button,
 .segmented button, .option-list button, .qty-btn, .sheet-close, .unit-toggle button,
-.food-row, .habit-list li, .meal-items li, .fav-btn, .info-btn {
+.food-row, .habit-list li, .meal-items li, .fav-btn, .info-btn, .review-badge {
   transition: transform var(--t-fast), opacity var(--t-fast), background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
 }
 .btn:active, .add-btn:active, .round-btn:active, .day-nav:active:not(:disabled),
 .quick-chip:active, .chips button:active, .segmented button:active,
-.option-list button:active, .qty-btn:active, .sheet-close:active, .unit-toggle button:active {
+.option-list button:active, .qty-btn:active, .sheet-close:active, .unit-toggle button:active,
+.review-badge:active {
   transform: scale(0.96);
 }
 .food-row:active, .habit-list li:active, .meal-items li:active { opacity: 0.6; }
@@ -600,7 +601,12 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .to-round-btn { margin-top: 18px; padding: 18px 34px; font-size: var(--fs-lg); background: var(--card2); border-radius: var(--r-xl); }
 .to-actions { display: flex; gap: 10px; margin-top: 26px; }
 
-.review-badge { font-size: var(--fs-2xs); font-weight: 700; color: var(--accent); background: var(--accent-dim); padding: 4px 9px; border-radius: var(--r-full); white-space: nowrap; }
+.review-badge {
+  font: inherit; font-size: var(--fs-2xs); font-weight: 700; color: var(--accent); background: var(--accent-dim);
+  border: none; padding: 4px 8px 4px 9px; border-radius: var(--r-full); white-space: nowrap; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px;
+}
+.review-badge .ic { width: 13px; height: 13px; }
 
 /* ===== Calculation explainer ===== */
 .calc-formula {

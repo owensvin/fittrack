@@ -171,6 +171,7 @@
     <main id="view-progress" class="view hidden">
       <header class="page-header"><h1>Progress</h1></header>
       <section class="card" id="weekCard"></section>
+      <section class="card hidden" id="plateauCard"></section>
       <h2 class="section-label">Goals</h2>
       <section id="goalCards"></section>
       <h2 class="section-label">Logging history</h2>
@@ -403,6 +404,24 @@
         <p class="muted center" id="reminderInfo" style="margin-top:10px"></p>
       </section>
       <section class="card">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="heart"></span>Apple Health</h3></div>
+        <p class="muted" id="healthUnavailNote" style="margin-bottom:10px">Read-only — FitTrack never writes to Health. Pulls in new data each time you open the app.</p>
+        <div class="switch-row">
+          <div><div class="switch-title">Weight</div><div class="muted">From your smart scale or any Health-connected app</div></div>
+          <label class="switch"><input type="checkbox" id="setHealthWeight"><span class="knob"></span></label>
+        </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Steps</div><div class="muted">Overwrites steps for a day unless you've entered them yourself</div></div>
+          <label class="switch"><input type="checkbox" id="setHealthSteps"><span class="knob"></span></label>
+        </div>
+        <div class="switch-row">
+          <div><div class="switch-title">Sleep</div><div class="muted">Same rule — your manual entry always wins over Health</div></div>
+          <label class="switch"><input type="checkbox" id="setHealthSleep"><span class="knob"></span></label>
+        </div>
+        <button class="btn ghost full" id="healthSyncNowBtn" style="margin-top:10px">Sync now</button>
+        <p class="muted center" id="healthSyncInfo" style="margin-top:8px"></p>
+      </section>
+      <section class="card">
         <div class="card-head"><h3><span class="ic t-amber" data-ic="sparkle"></span>AI photo estimates</h3></div>
         <p class="muted" style="margin-bottom:10px">Paste an Anthropic API key to estimate calories from a meal photo. Stored only on this device; each photo costs a fraction of a cent.</p>
         <input type="password" id="setApiKey" placeholder="sk-ant-...">
@@ -501,6 +520,18 @@
     </div>
   </div>
 
+  <!-- ===== What's New (shown once per version bump) ===== -->
+  <div id="whatsNewSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="whatsNewTitle">What's new</h2>
+        <button class="sheet-close" id="whatsNewClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <ul id="whatsNewList" class="muted" style="padding-left:18px;display:flex;flex-direction:column;gap:10px;list-style:disc"></ul>
+      <button class="btn primary full" id="whatsNewGotIt" style="margin-top:14px">Got it</button>
+    </div>
+  </div>
+
   <!-- ===== Describe food (AI) ===== -->
   <!-- ===== Barcode scanner ===== -->
   <div id="scanSheet" class="sheet hidden">
@@ -543,12 +574,9 @@
       <div class="macro-row">
         <div class="macro-field"><label>Time</label><input type="time" id="detailTime"></div>
       </div>
-      <p class="field-label">Add to</p>
-      <div class="chips meal-chips" id="detailMealChips">
-        <button data-meal="breakfast">Breakfast</button>
-        <button data-meal="lunch">Lunch</button>
-        <button data-meal="dinner">Dinner</button>
-        <button data-meal="snacks">Snacks</button>
+      <div class="switch-row">
+        <div><div class="switch-title">This is a snack</div><div class="muted">Otherwise categorized automatically from the time above</div></div>
+        <label class="switch"><input type="checkbox" id="detailSnackToggle"><span class="knob"></span></label>
       </div>
       <button class="btn primary full" id="detailAdd">Add</button>
     </div>
@@ -572,8 +600,14 @@
         <div class="form-grid">
           <label>Name <input type="text" id="qName" placeholder="e.g. Lunch out"></label>
         </div>
-        <div class="macro-row" id="qTimeWrap">
-          <div class="macro-field"><label>Time</label><input type="time" id="qTime"></div>
+        <div id="qTimeWrap">
+          <div class="macro-row">
+            <div class="macro-field"><label>Time</label><input type="time" id="qTime"></div>
+          </div>
+          <div class="switch-row">
+            <div><div class="switch-title">This is a snack</div><div class="muted">Otherwise categorized automatically from the time above</div></div>
+            <label class="switch"><input type="checkbox" id="qSnackToggle"><span class="knob"></span></label>
+          </div>
         </div>
         <div class="segmented hidden" id="qCustomModeSeg" style="margin:10px 0">
           <button data-val="simple" class="active">Simple</button>
@@ -632,15 +666,6 @@
           <label id="qServingWrap" class="hidden">Serving label <input type="text" id="qServing" placeholder="e.g. 1 bowl, 250 g, or 330 ml"></label>
         </div>
       </div>
-      <div id="quickMealWrap" class="hidden">
-        <p class="field-label">Add to</p>
-        <div class="chips meal-chips" id="quickMealChips">
-          <button data-meal="breakfast">Breakfast</button>
-          <button data-meal="lunch">Lunch</button>
-          <button data-meal="dinner">Dinner</button>
-          <button data-meal="snacks">Snacks</button>
-        </div>
-      </div>
       <button class="btn primary full" id="quickSave">Add</button>
     </div>
   </div>
@@ -651,6 +676,12 @@
       <div class="sheet-head">
         <h2>Log activity</h2>
         <button class="sheet-close" id="exerciseClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="qai-block">
+        <label class="field-label">Describe it and let AI estimate</label>
+        <textarea id="exDesc" rows="2" placeholder="e.g. 30 min kettlebell circuit — or ran 5k this morning"></textarea>
+        <button class="btn ghost full" id="exEstimate"><span class="ic" data-ic="sparkle"></span>Estimate with AI</button>
+        <p class="qai-or"><span>or pick from the list</span></p>
       </div>
       <div id="exerciseListPicker" class="food-list"></div>
     </div>

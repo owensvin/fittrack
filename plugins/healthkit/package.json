@@ -1,0 +1,15 @@
+{
+  "name": "fittrack-healthkit",
+  "version": "1.0.0",
+  "description": "Read-only Apple HealthKit sync (body mass, steps, sleep)",
+  "main": "dist/plugin.js",
+  "files": ["ios/", "dist/", "FittrackHealthkit.podspec"],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^6.0.0"
+  }
+}

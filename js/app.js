@@ -9,7 +9,8 @@ const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.22";
+const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
+const APP_VERSION = "3.0";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -63,6 +64,29 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.add("hidden"), 2000);
 }
 
+// Wires a sheet's close button + backdrop-click to the same close action
+// (defaults to just hiding the sheet; pass onClose for sheets that need
+// custom teardown, e.g. the barcode scanner stopping its camera stream).
+function wireSheetClose(sheetId, closeBtnId, onClose) {
+  const close = onClose || (() => $("#" + sheetId).classList.add("hidden"));
+  const btn = $("#" + closeBtnId);
+  if (btn) btn.addEventListener("click", close);
+  $("#" + sheetId).addEventListener("click", (e) => { if (e.target.id === sheetId) close(); });
+}
+
+// Wires .fi-del buttons in a rendered list to splice-by-index out of an
+// array (the common delete shape shared by meals/exercises/sessions/
+// ingredients). getArr(btn) resolves which array a given row belongs to.
+function wireIndexDelete(containerSel, getArr, after, opts = {}) {
+  $$(containerSel + " .fi-del").forEach((b) => b.addEventListener("click", (e) => {
+    if (opts.stopProp) e.stopPropagation();
+    const arr = getArr(b);
+    if (arr) arr.splice(+b.dataset.i, 1);
+    if (opts.save !== false) save();
+    after();
+  }));
+}
+
 /* ---------- icons ---------- */
 const ICONS = {
   chevL: '<polyline points="15 5 8 12 15 19"/>',
@@ -104,6 +128,7 @@ const ICONS = {
   pulse: '<polyline points="3 12 7.5 12 10 5.5 14 18.5 16.5 12 21 12"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor"/>',
+  heart: '<path d="M12 20s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 5c-2.5 4.6-9.5 9-9.5 9z"/>',
 };
 function renderIcons(root = document) {
   $$("[data-ic]", root).forEach((el) => {
@@ -156,7 +181,7 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     supplements: defaultSupplements(),
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, appleHealth: { weight: false, steps: false, sleep: false, lastSync: null }, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -171,6 +196,8 @@ function loadState() {
       if (!s.settings.timer) s.settings.timer = { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] };
       if (!s.settings.timer.program) s.settings.timer.program = [];
       if (!s.settings.weeklyReview) s.settings.weeklyReview = { enabled: false };
+      if (s.settings.lastSeenVersion === undefined) s.settings.lastSeenVersion = null;
+      if (!s.settings.appleHealth) s.settings.appleHealth = { weight: false, steps: false, sleep: false, lastSync: null };
       if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
       if (s.profile && s.profile.targetDeficit == null) {
         const pr = s.profile, wt = (s.weights && s.weights.length) ? s.weights[s.weights.length - 1].kg : pr.startWeightKg;
@@ -191,7 +218,7 @@ function loadState() {
       if (s.weights) for (const w of s.weights) { if (!w.ts) w.ts = fromKey(w.d).toISOString(); }
       return s;
     }
-  } catch (e) { console.error("load failed", e); }
+  } catch (e) { /* corrupt/unreadable localStorage — fall back to a fresh state */ }
   return defaultState();
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
@@ -318,8 +345,7 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-info]");
   if (b) openInfo(b.dataset.info);
 });
-$("#infoPopupClose").addEventListener("click", () => $("#infoPopup").classList.add("hidden"));
-$("#infoPopup").addEventListener("click", (e) => { if (e.target.id === "infoPopup") $("#infoPopup").classList.add("hidden"); });
+wireSheetClose("infoPopup", "infoPopupClose");
 
 // Keyboard handling: rather than lifting the whole sheet (which shoves it
 // off-screen), we expose the keyboard height as --kb (used as scroll-area
@@ -471,6 +497,33 @@ function obSummary() {
   $("#obSummary").innerHTML =
     `Daily target: <strong>${target} kcal</strong> · Protein: <strong>${protein} g</strong>${floorNote}`;
 }
+// Shown once per version bump to an existing user (never on first install —
+// obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
+const WHATS_NEW = {
+  "3.0": [
+    "Apple Health sync — pull weight, steps, and sleep in automatically (Settings → Apple Health).",
+    "Plateau detection on Progress — flags a stall if your weight isn't moving despite a real logged deficit.",
+    "AI weekly review — a short plain-English summary of your week, generated on-device.",
+    "Describe your workout — natural-language activity logging, the same \"Describe\" flow food already has.",
+    "Breakfast, Lunch, Dinner, and Snacks are now one combined list on Today, auto-sorted and categorized by the time you log — snacks are a toggle instead, since they don't belong to a time window.",
+    "Detailed Trend now shows real dates on its axis (not just day-of-week) and a fuller Insights & Data section — 30-day change, current weekly pace, all-time highs/lows.",
+    "The \"Weekly review ready\" badge now actually opens your week's summary.",
+  ],
+};
+function maybeShowWhatsNew() {
+  const entry = WHATS_NEW[APP_VERSION];
+  if (state.settings.lastSeenVersion !== APP_VERSION) {
+    state.settings.lastSeenVersion = APP_VERSION; save();
+    if (entry) {
+      $("#whatsNewTitle").textContent = `What's new in v${APP_VERSION}`;
+      $("#whatsNewList").innerHTML = entry.map((x) => `<li>${esc(x)}</li>`).join("");
+      $("#whatsNewSheet").classList.remove("hidden");
+    }
+  }
+}
+wireSheetClose("whatsNewSheet", "whatsNewClose");
+$("#whatsNewGotIt").addEventListener("click", () => $("#whatsNewSheet").classList.add("hidden"));
+
 function obFinish() {
   const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), age = parseInt($("#obAge").value, 10);
   const t = r0(bmr(ob.sex, w, h, age) * ob.activity);
@@ -487,6 +540,7 @@ function obFinish() {
   ];
   state.weights.push({ d: todayKey(), ts: new Date().toISOString(), kg: w });
   if (ob.supplements.length) state.supplements = ob.supplements;
+  state.settings.lastSeenVersion = APP_VERSION; // brand-new install — skip the What's New popup
   save();
   $("#onboarding").classList.add("hidden");
   startApp();
@@ -562,7 +616,10 @@ function drawRings(m) {
   ];
   let circles = "";
   rings.forEach((rg) => {
-    const C = 2 * Math.PI * rg.r, pct = rg.pct, first = clamp(pct, 0, 1);
+    // A tiny minimum sliver (like Apple's Activity rings) so each ring still
+    // reads as "this ring is orange/green/blue" at exactly 0% instead of
+    // looking like a plain dead grey circle before anything's logged.
+    const C = 2 * Math.PI * rg.r, pct = rg.pct, first = Math.max(clamp(pct, 0, 1), 0.015);
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="12"/>`;
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - first)}"/>`;
     // Over budget: a second lap wraps over the first in a darker shade of the
@@ -659,8 +716,7 @@ function renderExpenditureCard() {
 }
 function openTrends() { renderExpenditureCard(); renderTrends(); $("#trendsSheet").classList.remove("hidden"); }
 $("#ringsWrap").addEventListener("click", openTrends);
-$("#trendsClose").addEventListener("click", () => $("#trendsSheet").classList.add("hidden"));
-$("#trendsSheet").addEventListener("click", (e) => { if (e.target.id === "trendsSheet") $("#trendsSheet").classList.add("hidden"); });
+wireSheetClose("trendsSheet", "trendsClose");
 $("#trendMetricChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendMetric = b.dataset.m; setPref("trendMetric", trendMetric); renderTrends(); });
 $("#trendRangeChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendRange = +b.dataset.d; setPref("trendRange", trendRange); renderTrends(); });
 
@@ -681,13 +737,19 @@ function targetStreak() { return runStreak(dayComplete); }
 function streak() { return targetStreak(); } // kept for the Summary stat grid
 
 /* ---------- Today ---------- */
-function defaultMealForNow() {
-  const h = new Date().getHours();
+// Auto-categorizes a logged item's meal from its time of day — the one
+// merged list on Today no longer asks the user to pick Breakfast/Lunch/
+// Dinner/Snacks manually; snacks are opted into explicitly instead (see the
+// "This is a snack" toggle in the detail sheet) since they aren't tied to a
+// time window the way the other three are.
+function mealFromTime(timeStr) {
+  const h = parseInt((timeStr || "").split(":")[0], 10);
   if (h < 11) return "breakfast";
   if (h < 16) return "lunch";
   if (h < 21) return "dinner";
   return "snacks";
 }
+function defaultMealForNow() { return mealFromTime(nowTimeStr()); }
 function renderToday() {
   const k = viewDate, isToday = k === todayKey();
   $("#dayLabel").textContent = isToday ? "Today" : k === addDays(todayKey(), -1) ? "Yesterday" : fromKey(k).toLocaleDateString(undefined, { weekday: "long" });
@@ -746,33 +808,35 @@ function renderQuickRow() {
       sheetMeal = defaultMealForNow();
       addFoodItem({ name: f.name, kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0, qtyLabel: f.serving || "" }, f);
     }));
-  $("#quickMore").addEventListener("click", () => openFoodSheet(defaultMealForNow()));
+  $("#quickMore").addEventListener("click", () => openFoodSheet());
 }
 
+const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.id, m.label]));
 function renderMeals(k) {
   const log = dayLog(k);
-  $("#mealList").innerHTML = MEALS.map((mm) => {
-    const items = log.meals[mm.id] || [];
-    const kcal = items.reduce((s, i) => s + i.kcal, 0);
-    return `<section class="card meal-card">
-      <div class="meal-head">
-        <h3><span class="ic meal-ic" data-ic="${mm.ic}"></span>${mm.label}</h3>
-        <span class="meal-kcal">${items.length ? r0(kcal) + " kcal" : ""}</span>
-        <button class="add-btn" data-meal="${mm.id}"><span class="ic" data-ic="plus"></span></button>
-      </div>
-      ${items.length ? `<ul class="meal-items">` + items.map((it, i) =>
-        `<li data-meal="${mm.id}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${esc(it.qtyLabel || "")}</span></span>
-         <span class="fi-kcal">${r0(it.kcal)}</span>
-         <button class="fi-del" data-meal="${mm.id}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("") + `</ul>` : ""}
-    </section>`;
-  }).join("");
+  // One merged, time-sorted list across all meal buckets — items still carry
+  // data-meal/data-i pointing at their real bucket+index, so edit/delete
+  // (which key into log.meals[mealId][i]) work unchanged underneath.
+  const flat = [];
+  for (const mm of MEALS) (log.meals[mm.id] || []).forEach((it, i) => flat.push({ mealId: mm.id, i, it }));
+  flat.sort((a, b) => (a.it.ts || 0) - (b.it.ts || 0));
+  const totalKcal = flat.reduce((s, x) => s + x.it.kcal, 0);
+  $("#mealList").innerHTML = `<section class="card meal-card">
+    <div class="meal-head">
+      <h3><span class="ic meal-ic" data-ic="bowl"></span>Meals</h3>
+      <span class="meal-kcal">${flat.length ? r0(totalKcal) + " kcal" : ""}</span>
+      <button class="add-btn" id="mealAddBtn"><span class="ic" data-ic="plus"></span></button>
+    </div>
+    ${flat.length ? `<ul class="meal-items">` + flat.map(({ mealId, i, it }) =>
+      `<li data-meal="${mealId}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${it.ts ? fmtTime(it.ts) + " · " : ""}${MEAL_LABEL[mealId]}${it.qtyLabel ? " · " + esc(it.qtyLabel) : ""}</span></span>
+       <span class="fi-kcal">${r0(it.kcal)}</span>
+       <button class="fi-del" data-meal="${mealId}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("") + `</ul>`
+      : `<p class="muted" style="margin-top:8px">Nothing logged yet — tap + to add.</p>`}
+  </section>`;
   renderIcons($("#mealList"));
-  $$("#mealList .add-btn").forEach((b) => b.addEventListener("click", () => openFoodSheet(b.dataset.meal)));
+  $("#mealAddBtn").addEventListener("click", () => openFoodSheet());
   $$("#mealList .meal-items li").forEach((li) => li.addEventListener("click", () => openEditFood(li.dataset.meal, +li.dataset.i)));
-  $$("#mealList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    log.meals[b.dataset.meal].splice(+b.dataset.i, 1); save(); renderToday();
-  }));
+  wireIndexDelete("#mealList", (b) => log.meals[b.dataset.meal], renderToday, { stopProp: true });
   makeSwipeable($("#mealList"));
 }
 
@@ -788,9 +852,7 @@ function renderExercises(k) {
   $("#exerciseSummary").textContent = walks.length
     ? `${walks.length} ${walks.length === 1 ? "activity" : "activities"} · ${r0(total)} kcal burned${isWeekend(k) ? " · rest day" : ""}`
     : (isWeekend(k) ? "Weekend rest day — nice." : "No activity logged yet");
-  $$("#exerciseList .fi-del").forEach((b) => b.addEventListener("click", () => {
-    log.walks.splice(+b.dataset.i, 1); save(); renderToday();
-  }));
+  wireIndexDelete("#exerciseList", () => log.walks, renderToday);
   makeSwipeable($("#exerciseList"));
 }
 
@@ -847,8 +909,7 @@ function openCalendar() {
   $("#calSheet").classList.remove("hidden");
 }
 $("#dayTitleBtn").addEventListener("click", openCalendar);
-$("#calClose").addEventListener("click", () => $("#calSheet").classList.add("hidden"));
-$("#calSheet").addEventListener("click", (e) => { if (e.target.id === "calSheet") $("#calSheet").classList.add("hidden"); });
+wireSheetClose("calSheet", "calClose");
 $("#calPrev").addEventListener("click", () => {
   if ($("#calPrev").disabled) return;
   calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar();
@@ -988,8 +1049,7 @@ function makeCardExpandable(sel, openFn) {
   });
 }
 makeCardExpandable("#mealGapsCard", () => { renderMealGapsChart(); $("#mealGapsSheet").classList.remove("hidden"); });
-$("#mealGapsClose").addEventListener("click", () => $("#mealGapsSheet").classList.add("hidden"));
-$("#mealGapsSheet").addEventListener("click", (e) => { if (e.target.id === "mealGapsSheet") $("#mealGapsSheet").classList.add("hidden"); });
+wireSheetClose("mealGapsSheet", "mealGapsClose");
 function nowTimeStr() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 function tsToTimeStr(ts) { const d = new Date(ts); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 function timeToTs(dateKey, timeStr) {
@@ -1011,17 +1071,42 @@ function openExercisePicker() {
 }
 $("#exerciseAddBtn").addEventListener("click", openExercisePicker);
 $("#trainExerciseAddBtn").addEventListener("click", openExercisePicker);
-$("#exerciseClose").addEventListener("click", () => $("#exerciseSheet").classList.add("hidden"));
-$("#exerciseSheet").addEventListener("click", (e) => { if (e.target.id === "exerciseSheet") $("#exerciseSheet").classList.add("hidden"); });
+wireSheetClose("exerciseSheet", "exerciseClose");
 function exKcal(mins) { return exSel.met * currentWeight() * (mins / 60); }
-function openExDetail(ex) {
+function openExDetail(ex, mins) {
   exSel = ex;
   $("#exDetailName").textContent = ex.name;
-  $("#exMins").value = 30;
-  $$("#exDurChips button").forEach((b) => b.classList.toggle("active", b.dataset.min === "30"));
+  $("#exMins").value = mins || 30;
+  $$("#exDurChips button").forEach((b) => b.classList.toggle("active", b.dataset.min === String(mins || 30)));
   updateExPreview();
   $("#exDetailSheet").classList.remove("hidden");
 }
+// Natural-language activity entry, mirroring the food "Describe" flow: parses
+// a free-text description into a name/MET/duration via the same on-device
+// Foundation Models pipeline, then opens the normal duration/preview step
+// pre-filled so the user can still adjust before logging.
+const EXERCISE_DESCRIBE_PROMPT = 'The user is logging a workout or activity in their own words. Identify the activity, its MET (metabolic equivalent) value, and its duration in minutes (guess a typical duration like 30 if none is mentioned). Respond with ONLY a JSON object, no other text, exactly in this shape: {"name": string, "met": number, "minutes": integer}\n\nDescription: ';
+async function estimateExercise(desc) {
+  const text = await aiGenerateText(EXERCISE_DESCRIBE_PROMPT + desc);
+  if (!text) return null;
+  const m = text.match(/\{[\s\S]*?\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]);
+    if (j.name && isFinite(+j.met) && isFinite(+j.minutes)) return { name: j.name, met: +j.met, minutes: Math.max(1, Math.round(+j.minutes)) };
+  } catch (e) { /* fall through to null */ }
+  return null;
+}
+$("#exEstimate").addEventListener("click", async () => {
+  const desc = $("#exDesc").value.trim();
+  if (!desc) return toast("Describe your activity first");
+  const btn = $("#exEstimate"); btn.disabled = true; btn.textContent = "Estimating…";
+  const est = await estimateExercise(desc);
+  btn.disabled = false; btn.innerHTML = '<span class="ic" data-ic="sparkle"></span>Estimate with AI'; renderIcons(btn);
+  if (!est) return toast("On-device AI unavailable on this device — pick from the list below instead");
+  $("#exDesc").value = "";
+  openExDetail({ name: est.name, ic: "bolt", met: est.met }, est.minutes);
+});
 function updateExPreview() {
   const mins = parseInt($("#exMins").value, 10) || 0;
   $("#exPreview").innerHTML = `<div><span>${mins}</span><label>minutes</label></div><div><span>${r0(exKcal(mins))}</span><label>kcal burned</label></div>`;
@@ -1032,8 +1117,7 @@ $("#exDurChips").addEventListener("click", (e) => {
   $$("#exDurChips button").forEach((x) => x.classList.toggle("active", x === b));
   $("#exMins").value = b.dataset.min; updateExPreview();
 });
-$("#exDetailClose").addEventListener("click", () => $("#exDetailSheet").classList.add("hidden"));
-$("#exDetailSheet").addEventListener("click", (e) => { if (e.target.id === "exDetailSheet") $("#exDetailSheet").classList.add("hidden"); });
+wireSheetClose("exDetailSheet", "exDetailClose");
 $("#exAdd").addEventListener("click", () => {
   const mins = parseInt($("#exMins").value, 10) || 0;
   if (mins <= 0) return;
@@ -1046,28 +1130,18 @@ $("#exAdd").addEventListener("click", () => {
 
 /* ---------- food sheet ---------- */
 let sheetMeal = "breakfast", sheetTab = "all", offResults = [], offLoading = false;
-// The meal-category chips (in the detail + quick sheets) just retarget sheetMeal,
-// so a food created any way (search, barcode, photo, quick add) can be dropped
-// into any meal without reopening from that meal's + button.
-function setupMealChips(sel) {
-  $$(sel + " button").forEach((b) => b.classList.toggle("active", b.dataset.meal === sheetMeal));
-}
-document.addEventListener("click", (e) => {
-  const b = e.target.closest("#detailMealChips button, #quickMealChips button");
-  if (!b) return;
-  sheetMeal = b.dataset.meal;
-  $$("#detailMealChips button, #quickMealChips button").forEach((x) => x.classList.toggle("active", x.dataset.meal === sheetMeal));
-});
-function openFoodSheet(meal) {
-  sheetMeal = meal; sheetTab = "all"; offResults = [];
-  $("#sheetTitle").textContent = "Add to " + meal.charAt(0).toUpperCase() + meal.slice(1);
+// sheetMeal is set right before addFoodItem() — auto-categorized from time
+// (or the "This is a snack" toggle) at the actual log step, or from the
+// current time for one-tap quick-row re-adds — never picked manually.
+function openFoodSheet() {
+  sheetTab = "all"; offResults = [];
+  $("#sheetTitle").textContent = "Add food";
   $("#foodSearch").value = "";
   $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "all"));
   $("#foodSheet").classList.remove("hidden");
   renderFoodList();
 }
-$("#sheetClose").addEventListener("click", () => $("#foodSheet").classList.add("hidden"));
-$("#foodSheet").addEventListener("click", (e) => { if (e.target.id === "foodSheet") $("#foodSheet").classList.add("hidden"); });
+wireSheetClose("foodSheet", "sheetClose");
 $("#foodTabs").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   sheetTab = b.dataset.tab;
@@ -1150,7 +1224,7 @@ function openDetail(food, mode) {
   $$("#detailUnitSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === "serv"));
   applyDetailUnit();
   $("#detailTime").value = nowTimeStr();
-  setupMealChips("#detailMealChips");
+  $("#detailSnackToggle").checked = false;
   $("#detailSheet").classList.remove("hidden");
 }
 function applyDetailUnit() {
@@ -1183,14 +1257,16 @@ $("#qtyInput").addEventListener("input", updateMacroPreview);
 function detailStep() { return detail.mode === "per100" ? 10 : (detail.unit === "g" || detail.unit === "ml") ? 5 : 0.5; }
 $("#qtyMinus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = Math.max(st, (parseFloat(i.value) || 0) - st); updateMacroPreview(); });
 $("#qtyPlus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = (parseFloat(i.value) || 0) + st; updateMacroPreview(); });
-$("#detailClose").addEventListener("click", () => $("#detailSheet").classList.add("hidden"));
-$("#detailSheet").addEventListener("click", (e) => { if (e.target.id === "detailSheet") $("#detailSheet").classList.add("hidden"); });
+wireSheetClose("detailSheet", "detailClose");
 $("#detailAdd").addEventListener("click", () => {
   const f = detail.food, k = detailFactor(); if (k <= 0) return;
   const qtyLabel = detail.mode === "per100" ? `${r0(k * 100)} g`
     : (detail.unit === "g" || detail.unit === "ml") ? `${r0(parseFloat($("#qtyInput").value) || 0)} ${detail.unit}`
     : (k === 1 ? (f.serving || "") : `${k} × ${f.serving || "serving"}`);
-  const ts = timeToTs(viewDate, $("#detailTime").value);
+  const timeStr = $("#detailTime").value;
+  const ts = timeToTs(viewDate, timeStr);
+  // Auto-categorized from the time above, unless explicitly marked a snack.
+  sheetMeal = $("#detailSnackToggle").checked ? "snacks" : mealFromTime(timeStr);
   // Barcode / online results (per-100g, not yet in the library) get saved so
   // they're reusable next time — the meal gets the scaled portion.
   if (detail.mode === "per100" && f.name && !f.id) {
@@ -1227,14 +1303,15 @@ function openQuick(mode, prefill) {
   $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Quick Add" : "Quick add";
   $("#qDescribeWrap").classList.toggle("hidden", mode !== "manual");
   $("#qDesc").value = "";
-  // No meal picker here anymore — Quick Add/Photo save to the library, then the
-  // user logs from there (detail sheet) like any other food.
-  $("#quickMealWrap").classList.add("hidden");
   $("#qServingWrap").classList.toggle("hidden", mode !== "custom" && mode !== "manual");
   $("#qNote").classList.toggle("hidden", mode !== "ai");
   $("#qCustomModeSeg").classList.toggle("hidden", mode !== "custom");
-  $("#qTimeWrap").classList.toggle("hidden", mode === "custom");
+  // Time/meal only matter for "edit" (an already-logged item) — Quick Add/
+  // Photo/Custom all save to the library first with no meal/time attached
+  // yet, so showing them there was a leftover from before that flow existed.
+  $("#qTimeWrap").classList.toggle("hidden", mode !== "edit");
   $("#qTime").value = (prefill && prefill.ts) ? tsToTimeStr(prefill.ts) : nowTimeStr();
+  $("#qSnackToggle").checked = mode === "edit" && editTarget && editTarget.mealId === "snacks";
   aiServingG = (mode === "ai" && prefill && prefill.serving_g) ? prefill.serving_g : 0;
   if (mode === "ai") $("#qNote").textContent = (aiServingG ? `≈ ${aiServingG} g portion. ` : "") + "AI's best guess — tweak anything, then add.";
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
@@ -1290,9 +1367,7 @@ function renderIngredientList() {
       }).join("")
     : `<li class="muted" style="border-top:none">No ingredients yet.</li>`;
   renderIcons($("#ingredientList"));
-  $$("#ingredientList .fi-del").forEach((b) => b.addEventListener("click", () => {
-    customIngredients.splice(+b.dataset.i, 1); renderIngredientList();
-  }));
+  wireIndexDelete("#ingredientList", () => customIngredients, renderIngredientList, { save: false });
   makeSwipeable($("#ingredientList"));
   if (!totalWTouched) $("#mealTotalWeight").value = defaultTotalWeight() || "";
   if (!servWTouched) $("#mealServingWeight").value = $("#mealTotalWeight").value;
@@ -1351,8 +1426,7 @@ $("#qEstimate").addEventListener("click", async () => {
   } catch (err) { toast("AI failed: " + (err.message || "error")); }
   btn.disabled = false; btn.innerHTML = orig;
 });
-$("#quickClose").addEventListener("click", () => $("#quickSheet").classList.add("hidden"));
-$("#quickSheet").addEventListener("click", (e) => { if (e.target.id === "quickSheet") $("#quickSheet").classList.add("hidden"); });
+wireSheetClose("quickSheet", "quickClose");
 let editingCustomFoodId = null;
 $("#quickSave").addEventListener("click", () => {
   const name = $("#qName").value.trim();
@@ -1385,8 +1459,12 @@ $("#quickSave").addEventListener("click", () => {
     save();
     $("#quickSheet").classList.add("hidden"); renderFoodList();
   } else if (quickMode === "edit") {
-    const ts = timeToTs(viewDate, $("#qTime").value);
-    dayLog(viewDate).meals[editTarget.mealId][editTarget.i] = { ...food, qtyLabel: "", ts };
+    const timeStr = $("#qTime").value;
+    const ts = timeToTs(viewDate, timeStr);
+    const newMeal = $("#qSnackToggle").checked ? "snacks" : mealFromTime(timeStr);
+    const log = dayLog(viewDate);
+    log.meals[editTarget.mealId].splice(editTarget.i, 1); // remove from its old bucket first — index shifts otherwise
+    log.meals[newMeal].push({ ...food, qtyLabel: "", ts });
     save(); renderToday(); $("#quickSheet").classList.add("hidden"); toast("Updated");
   } else {
     // Quick Add / Photo(ai): create-then-log is split like Custom food — save the
@@ -1398,7 +1476,7 @@ $("#quickSave").addEventListener("click", () => {
     save();
     $("#quickSheet").classList.add("hidden");
     sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
-    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet(sheetMeal);
+    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
     renderFoodList();
     toast("Saved to your library — tap it to add");
   }
@@ -1500,6 +1578,20 @@ function aiEstimateText(desc) {
 // plugin; falls back to the Anthropic key if the device can't run it.
 const FoundationLLM = (window.Capacitor && window.Capacitor.registerPlugin)
   ? window.Capacitor.registerPlugin("FoundationLLM") : null;
+// Generic plain-text on-device generation (no JSON parsing) — used by
+// anything that just wants a short sentence out of the model, e.g. the
+// weekly-review narrative and natural-language exercise parsing. Returns
+// null (never throws) when on-device AI isn't available, so callers can
+// treat it as a "nice to have" and fall back to their non-AI behavior.
+async function aiGenerateText(prompt) {
+  if (!(isNativeApp() && FoundationLLM)) return null;
+  try {
+    const avail = await FoundationLLM.availability();
+    if (avail.status !== "available") return null;
+    const r = await FoundationLLM.generate({ prompt });
+    return (r.text || "").trim() || null;
+  } catch (e) { return null; }
+}
 const DESCRIBE_PROMPT = 'Estimate the calories and macros for the meal described below. Treat it as one combined meal, use a short title-cased name, and give your best numeric estimate for the full portion described, including its total weight in grams. Respond with ONLY a JSON object, no other text, exactly in this shape: {"name": string, "kcal": integer, "protein_g": integer, "carbs_g": integer, "fat_g": integer, "serving_g": integer}\n\nMeal: ';
 async function estimateDescription(desc) {
   if (isNativeApp() && FoundationLLM) {
@@ -1537,8 +1629,7 @@ function barcodeFormats() {
   ];
 }
 $("#scanBtn").addEventListener("click", openScanner);
-$("#scanClose").addEventListener("click", closeScanner);
-$("#scanSheet").addEventListener("click", (e) => { if (e.target.id === "scanSheet") closeScanner(); });
+wireSheetClose("scanSheet", "scanClose", closeScanner);
 $("#scanPhotoBtn").addEventListener("click", () => $("#scanPhotoInput").click());
 $("#scanPhotoInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; e.target.value = "";
@@ -1618,7 +1709,7 @@ async function lookupBarcode(code) {
     else state.customFoods.unshift({ id: "c" + Date.now(), ...food });
     save();
     sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
-    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet(sheetMeal);
+    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
     renderFoodList();
     toast(`${name} saved to your library — tap it to add`);
   } catch (e) { $("#scanStatus").textContent = "Lookup failed — check your connection."; setTimeout(() => resumeScan(instance), 1200); }
@@ -1881,15 +1972,41 @@ function renderTraining() {
   $("#trainExerciseSummary").textContent = tWalks.length
     ? `Today: ${tWalks.length} ${tWalks.length === 1 ? "activity" : "activities"} · ${r0(total)} kcal burned`
     : "Nothing logged today yet — tap + to add an activity.";
-  $$("#sessionList .fi-del").forEach((b) => b.addEventListener("click", () => {
-    const l = state.logs[b.dataset.dk]; if (l && l.walks) l.walks.splice(+b.dataset.i, 1);
-    save(); renderTraining();
-  }));
+  wireIndexDelete("#sessionList", (b) => { const l = state.logs[b.dataset.dk]; return l && l.walks; }, renderTraining);
   makeSwipeable($("#sessionList"));
 }
 
 /* ---------- Progress ---------- */
-function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); }
+// Flags a stall: weight barely moved over the last 2 weeks despite the user
+// actually logging a real deficit most days — the kind of thing worth
+// surfacing (water retention / under-logging / adapted expenditure) rather
+// than the app just staying quiet while the scale sits still.
+function detectPlateau() {
+  if (!state.profile) return null;
+  const days = 14;
+  const slope = weightTrendPerDay();
+  if (slope == null) return null;
+  const change = slope * days;
+  let loggedDays = 0, deficitSum = 0;
+  for (let i = 0; i < days; i++) {
+    const dk = addDays(todayKey(), -i), t = dayTotals(dk);
+    if (t.items > 0) { loggedDays++; deficitSum += targetFor(dk) - t.kcal; }
+  }
+  if (loggedDays < 10) return null; // not enough logging this window to trust the deficit
+  const avgDeficit = deficitSum / loggedDays;
+  if (Math.abs(change) < 0.3 && avgDeficit > 150) return { days, change: r1(change), avgDeficit: r0(avgDeficit) };
+  return null;
+}
+function renderPlateauCard() {
+  const el = $("#plateauCard");
+  const p = detectPlateau();
+  if (!p) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  el.innerHTML = `<div class="card-head"><h3><span class="ic t-amber" data-ic="target"></span>Possible plateau</h3></div>
+    <p class="muted">Weight has moved only ${Math.abs(p.change)} kg over the last ${p.days} days despite averaging a ${p.avgDeficit} kcal/day deficit. Common causes: water retention, under-logging, or your expenditure has adapted lower — worth double-checking logging accuracy, or a short maintenance break before continuing.</p>`;
+  renderIcons(el);
+}
+function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); renderPlateauCard(); }
 
 // A goal reached at ANY point stays reached (stamped with achievedOn),
 // even if the goal's end date hasn't arrived or weight later fluctuates up.
@@ -2096,15 +2213,13 @@ function detailedTrendChart({ entries, ma, pxPerDay, zoom }) {
     const y = Y(v).toFixed(1);
     return `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${(W - R + 6).toFixed(1)}" y="${(+y + 3).toFixed(1)}" font-size="9" fill="var(--muted)">${r1(v)}</text>`;
   }).join("");
-  // Full x-axis: every day labelled by weekday when zoomed to a week (matches
-  // the reference's Sun/Mon/Tue…); monthly zoom is too narrow for that, so it
-  // labels every 5th day with a short date instead.
+  // Full x-axis, always labelled by actual date (not just day-of-week, which
+  // repeats every 7 days and stops meaning anything once you've scrolled a
+  // few weeks back) — every day in Week zoom, every 5th day in Month zoom
+  // since daily labels would overlap at that density.
   let dayLabels = "";
-  if (zoom === "month") {
-    for (let i = 0; i <= totalDays; i += 5) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
-  } else {
-    for (let i = 0; i <= totalDays; i++) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fromKey(dk).toLocaleDateString(undefined, { weekday: "short" })}</text>`; }
-  }
+  const step = zoom === "month" ? 5 : 1;
+  for (let i = 0; i <= totalDays; i += step) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
   return `<div class="detail-scroll" id="weightDetailScroll"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
     ${grid}${dayLabels}${rawPath}${maPath}${dots}</svg></div>`;
 }
@@ -2153,10 +2268,17 @@ function renderWeightFull() {
   $("#weightFullGoalChips").innerHTML = sortedGoals.length
     ? sortedGoals.map((g) => `<button data-id="${g.id}" class="${weightFullGoalIds.has(g.id) ? "active" : ""}">${esc(g.label)}</button>`).join("")
     : `<p class="muted">No goals set yet.</p>`;
-  const d3 = weightChangeOverDays(fullMa, 3), d7 = weightChangeOverDays(fullMa, 7);
+  const d3 = weightChangeOverDays(fullMa, 3), d7 = weightChangeOverDays(fullMa, 7), d30 = weightChangeOverDays(fullMa, 30);
+  const pace = weightTrendPerDay(), paceWk = pace != null ? r1(pace * 7) : null;
+  const allVals = state.weights.map((w) => w.kg);
   $("#weightFullInsights").innerHTML = `
     <div class="stat-box"><div class="v ${d3 == null ? "" : d3 <= 0 ? "t-green" : "t-amber"}">${d3 == null ? "—" : (d3 <= 0 ? "" : "+") + d3 + " kg"}</div><div class="k">3-day change</div></div>
-    <div class="stat-box"><div class="v ${d7 == null ? "" : d7 <= 0 ? "t-green" : "t-amber"}">${d7 == null ? "—" : (d7 <= 0 ? "" : "+") + d7 + " kg"}</div><div class="k">7-day change</div></div>`;
+    <div class="stat-box"><div class="v ${d7 == null ? "" : d7 <= 0 ? "t-green" : "t-amber"}">${d7 == null ? "—" : (d7 <= 0 ? "" : "+") + d7 + " kg"}</div><div class="k">7-day change</div></div>
+    <div class="stat-box"><div class="v ${d30 == null ? "" : d30 <= 0 ? "t-green" : "t-amber"}">${d30 == null ? "—" : (d30 <= 0 ? "" : "+") + d30 + " kg"}</div><div class="k">30-day change</div></div>
+    <div class="stat-box"><div class="v ${paceWk == null ? "" : paceWk <= 0 ? "t-green" : "t-amber"}">${paceWk == null ? "—" : (paceWk <= 0 ? "" : "+") + paceWk + " kg"}</div><div class="k">current pace / wk</div></div>
+    <div class="stat-box"><div class="v">${allVals.length ? r1(Math.max(...allVals)) + " kg" : "—"}</div><div class="k">highest ever</div></div>
+    <div class="stat-box"><div class="v">${allVals.length ? r1(Math.min(...allVals)) + " kg" : "—"}</div><div class="k">lowest ever</div></div>
+    <div class="stat-box"><div class="v">${state.weights.length}</div><div class="k">total weigh-ins</div></div>`;
   if (!isDetailed && entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
     const trendWk = ma.length >= 2 ? r1((ma[ma.length - 1].v - ma[0].v) / (daysBetween(ma[0].d, ma[ma.length - 1].d) / 7)) : null;
@@ -2178,8 +2300,7 @@ function renderWeightFull() {
     : `<p class="muted">No goals set yet.</p>`;
 }
 makeCardExpandable("#weightCard", () => { renderWeightFull(); $("#weightFullSheet").classList.remove("hidden"); });
-$("#weightFullClose").addEventListener("click", () => $("#weightFullSheet").classList.add("hidden"));
-$("#weightFullSheet").addEventListener("click", (e) => { if (e.target.id === "weightFullSheet") $("#weightFullSheet").classList.add("hidden"); });
+wireSheetClose("weightFullSheet", "weightFullClose");
 $("#weightFullRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightFullRange = +b.dataset.d; setPref("weightFullRange", weightFullRange); renderWeightFull();
@@ -2198,7 +2319,10 @@ $("#weightFullGoalChips").addEventListener("click", (e) => {
   renderWeightFull();
 });
 function renderWaistChart() {
-  const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
+  // dailyWeights() averages multiple same-day readings — same aggregation the
+  // weight chart uses, applied here too in case of more than one waist
+  // measurement on a day.
+  const allEntries = dailyWeights(state.waists.map((w) => ({ d: w.d, kg: w.cm })));
   const entries = inRange(allEntries, WAIST_CARD_DAYS), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
   $("#waistChart").innerHTML = lineChart({ entries, ma, goals: [], unit: "cm", projDays: 0, color: "var(--blue)" });
   $("#waistDelta").textContent = state.waists.length >= 2 ? `${(state.waists[state.waists.length - 1].cm - state.waists[0].cm) <= 0 ? "" : "+"}${r1(state.waists[state.waists.length - 1].cm - state.waists[0].cm)} cm since start` : "measure weekly to track belly progress";
@@ -2259,10 +2383,12 @@ function renderWeekCard() {
   const maxMag = Math.max(Math.abs(estChange), Math.abs(actual || 0), 0.2);
   const estPct = clamp(Math.abs(estChange) / maxMag, 0, 1) * 100;
   const actPct = actual != null ? clamp(Math.abs(actual) / maxMag, 0, 1) * 100 : 0;
-  // Sunday's local notification prompts "your week is ready" — this mirrors that
-  // by highlighting the Summary card itself once the week has just rolled over.
-  const isMonday = new Date().getDay() === 1;
-  $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></h3>${isMonday ? `<span class="review-badge">Weekly review ready</span>` : ""}</div>
+  // The weekly-review local notification fires Sunday 6pm (Capacitor's
+  // LocalNotifications weekday:1 = Sunday) — this mirrors that same day so the
+  // in-app badge and the push notification always agree.
+  const isReviewDay = new Date().getDay() === 0;
+  $("#weekCard").innerHTML = `<div class="card-head"><h3>Summary <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button></h3>${isReviewDay ? `<button class="review-badge" id="weeklyReviewBadge">Weekly review ready <span class="ic" data-ic="chevR"></span></button>` : ""}</div>
+    <p id="weekNarrative" class="muted hidden" style="margin:-4px 0 12px"></p>
     <div class="chips" id="summaryChips">
       <button data-d="7" class="${days === 7 ? "active" : ""}">Week</button>
       <button data-d="30" class="${days === 30 ? "active" : ""}">Month</button>
@@ -2292,6 +2418,36 @@ function renderWeekCard() {
     </div>`;
   renderIcons($("#weekCard"));
   $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; setPref("summaryPeriod", summaryPeriod); renderWeekCard(); }));
+  updateWeekNarrative(days, { kcalDays, avgK, avgDef, actual, streak: streak() });
+}
+// Turns the Summary card's stat grid into one short plain-English sentence via
+// the on-device Foundation Models pipeline (same one food-description uses).
+// Silently no-ops (hides the line) when on-device AI isn't available — the
+// numeric stat grid above already carries the information either way.
+let weekNarrativeToken = 0;
+let weekNarrativeCache = { key: "", text: "" };
+async function updateWeekNarrative(days, ctx) {
+  const el = $("#weekNarrative");
+  if (!el) return;
+  if (!ctx.kcalDays) { el.classList.add("hidden"); return; }
+  const key = JSON.stringify({ days, ...ctx });
+  if (weekNarrativeCache.key === key) {
+    el.textContent = weekNarrativeCache.text;
+    el.classList.toggle("hidden", !weekNarrativeCache.text);
+    return;
+  }
+  const myToken = ++weekNarrativeToken;
+  const prompt = `Write one short, plain-English sentence (max 30 words, no markdown, no quotes) summarizing this person's last ${days} days of weight-loss tracking. Be specific, honest, and encouraging.
+Days logged: ${ctx.kcalDays}/${days}
+Avg calories/day: ${ctx.avgK}
+Avg deficit vs target/day: ${ctx.avgDef}
+Weight trend: ${ctx.actual != null ? (ctx.actual <= 0 ? "down " : "up ") + Math.abs(r1(ctx.actual)) + "kg" : "not enough weigh-ins to tell"}
+Logging streak: ${ctx.streak} days.`;
+  const text = await aiGenerateText(prompt);
+  if (myToken !== weekNarrativeToken) return; // superseded by a newer render
+  weekNarrativeCache = { key, text: text || "" };
+  el.textContent = text || "";
+  el.classList.toggle("hidden", !text);
 }
 
 /* ---------- swipe-left-to-delete ---------- */
@@ -2500,14 +2656,22 @@ function renderSummaryFull() {
   $$("#sumFullChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === sumFullPeriod));
 }
 $("#weekCard").addEventListener("click", (e) => {
-  if (e.target.closest("#summaryChips") || e.target.closest(".info-btn")) return;
+  if (e.target.closest("#summaryChips") || e.target.closest(".info-btn") || e.target.closest("#weeklyReviewBadge")) return;
   sumFullPeriod = summaryPeriod;
   sumFullOffset = 0;
   renderSummaryFull();
   $("#summarySheet").classList.remove("hidden");
 });
-$("#summaryFullClose").addEventListener("click", () => $("#summarySheet").classList.add("hidden"));
-$("#summarySheet").addEventListener("click", (e) => { if (e.target.id === "summarySheet") $("#summarySheet").classList.add("hidden"); });
+// The badge specifically means "this week" — always opens to the 7-day view
+// regardless of whatever period the card itself is currently toggled to.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#weeklyReviewBadge")) return;
+  sumFullPeriod = 7;
+  sumFullOffset = 0;
+  renderSummaryFull();
+  $("#summarySheet").classList.remove("hidden");
+});
+wireSheetClose("summarySheet", "summaryFullClose");
 $("#sumFullChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   sumFullPeriod = +b.dataset.d; sumFullOffset = 0; renderSummaryFull();
@@ -2594,9 +2758,8 @@ function renderSleepStepsHistory() {
   $("#stepsChart").innerHTML = simpleBars(days, stepVals, (v) => v.toLocaleString() + " steps", "var(--accent)", 8000);
   $("#sleepChart").innerHTML = simpleBars(days, sleepVals, (v) => v + " h", "var(--blue)", 8);
   const sv = stepVals.filter((v) => v != null), slv = sleepVals.filter((v) => v != null);
-  const avg = (a, d) => a.length ? (d ? r1 : r0)(a.reduce((x, y) => x + y, 0) / a.length) : null;
-  $("#stepsStats").innerHTML = `<div class="stat-box"><div class="v">${sv.length ? avg(sv).toLocaleString() : "—"}</div><div class="k">avg / day (${sv.length}d)</div></div><div class="stat-box"><div class="v">${sv.length ? Math.max(...sv).toLocaleString() : "—"}</div><div class="k">best day</div></div>`;
-  $("#sleepStats").innerHTML = `<div class="stat-box"><div class="v">${slv.length ? avg(slv, 1) + " h" : "—"}</div><div class="k">avg / night (${slv.length}d)</div></div><div class="stat-box"><div class="v">${slv.length ? Math.max(...slv) + " h" : "—"}</div><div class="k">longest</div></div>`;
+  $("#stepsStats").innerHTML = `<div class="stat-box"><div class="v">${sv.length ? calcAvg(sv).toLocaleString() : "—"}</div><div class="k">avg / day (${sv.length}d)</div></div><div class="stat-box"><div class="v">${sv.length ? Math.max(...sv).toLocaleString() : "—"}</div><div class="k">best day</div></div>`;
+  $("#sleepStats").innerHTML = `<div class="stat-box"><div class="v">${slv.length ? calcAvg(slv, 1) + " h" : "—"}</div><div class="k">avg / night (${slv.length}d)</div></div><div class="stat-box"><div class="v">${slv.length ? Math.max(...slv) + " h" : "—"}</div><div class="k">longest</div></div>`;
   const rows = [];
   for (let i = 0; i < 90; i++) { const dk = addDays(todayKey(), -i), l = state.logs[dk]; if (l && (l.steps != null || l.sleepH != null)) rows.push({ dk, steps: l.steps, sleepH: l.sleepH }); }
   $("#sleepStepsList").innerHTML = rows.length
@@ -2604,8 +2767,7 @@ function renderSleepStepsHistory() {
     : `<li class="muted" style="border-top:none">Nothing logged yet.</li>`;
 }
 makeCardExpandable("#sleepStepsCard", () => { renderSleepStepsHistory(); $("#sleepStepsSheet").classList.remove("hidden"); });
-$("#sleepStepsHistClose").addEventListener("click", () => $("#sleepStepsSheet").classList.add("hidden"));
-$("#sleepStepsSheet").addEventListener("click", (e) => { if (e.target.id === "sleepStepsSheet") $("#sleepStepsSheet").classList.add("hidden"); });
+wireSheetClose("sleepStepsSheet", "sleepStepsHistClose");
 function renderCalcSheet() {
   const p = state.profile, cw = currentWeight(), sexWord = p.sex === "male" ? "male" : "female";
   const base = p.sex === "male" ? 5 : -161;
@@ -2641,8 +2803,7 @@ function renderCalcSheet() {
     <p class="muted" style="margin-top:16px">Because BMR and TDEE use your <em>current</em> weight, both numbers drift automatically as you lose weight — no need to recalculate anything yourself.</p>`;
 }
 $("#calcOpenBtn").addEventListener("click", () => { renderCalcSheet(); $("#calcSheet").classList.remove("hidden"); });
-$("#calcClose").addEventListener("click", () => $("#calcSheet").classList.add("hidden"));
-$("#calcSheet").addEventListener("click", (e) => { if (e.target.id === "calcSheet") $("#calcSheet").classList.add("hidden"); });
+wireSheetClose("calcSheet", "calcClose");
 $("#weightSave").addEventListener("click", () => {
   const v = parseFloat($("#weightInput").value);
   if (!v || v < 25 || v > 350) return toast("Enter a valid weight");
@@ -2663,12 +2824,12 @@ $("#waistSave").addEventListener("click", () => {
 $("#sleepSave").addEventListener("click", () => {
   const v = parseFloat($("#sleepInput").value);
   if (!(v >= 0) || v > 24) return toast("Enter valid sleep hours");
-  dayLog(todayKey()).sleepH = v; save(); renderSleepSteps(); toast("Sleep logged");
+  const l = dayLog(todayKey()); l.sleepH = v; l.sleepSrc = "manual"; save(); renderSleepSteps(); toast("Sleep logged");
 });
 $("#stepsSave").addEventListener("click", () => {
   const v = parseInt($("#stepsInput").value, 10);
   if (!(v >= 0) || v > 200000) return toast("Enter a valid step count");
-  dayLog(todayKey()).steps = v; save(); renderSleepSteps(); toast("Steps logged");
+  const l = dayLog(todayKey()); l.steps = v; l.stepsSrc = "manual"; save(); renderSleepSteps(); toast("Steps logged");
 });
 
 /* photos via IndexedDB */
@@ -2725,6 +2886,7 @@ function renderSettings() {
     ? `Reminder set for ${state.settings.reminder.time} daily.`
     : "Reminders only fire in the installed app, not this preview.";
   $("#setWeekly").checked = !!state.settings.weeklyReview.enabled;
+  renderHealthSettings();
   renderTargetsSummary();
   renderPaceTiers();
   renderSuppSettings();
@@ -2822,6 +2984,80 @@ function renderPaceTiers() {
   $("#paceNote").textContent = cur ? `${cur.name} — ${cur.note}` : "Slide to pick a pace, or set your own targets below.";
 }
 function isNativeApp() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+
+/* ---------- Apple Health (read-only sync) ---------- */
+// Local Capacitor plugin (plugins/healthkit), same pattern as FoundationLLM —
+// registered directly since there's no vendored JS bundle for it.
+const HealthKit = (window.Capacitor && window.Capacitor.registerPlugin)
+  ? window.Capacitor.registerPlugin("HealthKit") : null;
+function renderHealthSettings() {
+  const h = state.settings.appleHealth;
+  $("#setHealthWeight").checked = !!h.weight;
+  $("#setHealthSteps").checked = !!h.steps;
+  $("#setHealthSleep").checked = !!h.sleep;
+  $("#healthUnavailNote").classList.toggle("hidden", isNativeApp());
+  $("#healthSyncInfo").textContent = h.lastSync ? `Last synced ${fmtShort(toKey(new Date(h.lastSync)))} ${fmtTime(h.lastSync)}` : "Never synced yet.";
+}
+$("#setHealthWeight").addEventListener("change", () => { state.settings.appleHealth.weight = $("#setHealthWeight").checked; save(); if ($("#setHealthWeight").checked) syncAppleHealth(); });
+$("#setHealthSteps").addEventListener("change", () => { state.settings.appleHealth.steps = $("#setHealthSteps").checked; save(); if ($("#setHealthSteps").checked) syncAppleHealth(); });
+$("#setHealthSleep").addEventListener("change", () => { state.settings.appleHealth.sleep = $("#setHealthSleep").checked; save(); if ($("#setHealthSleep").checked) syncAppleHealth(); });
+$("#healthSyncNowBtn").addEventListener("click", () => syncAppleHealth(true));
+// Pulls new samples since the last sync and merges them in. Weight is
+// additive (the data model already supports multiple same-day readings, so
+// Health entries just join whatever's already logged); steps/sleep are one
+// value per day, so a manual entry (stepsSrc/sleepSrc "manual") always wins
+// over Health — Health only fills in days you haven't entered yourself.
+async function syncAppleHealth(manual) {
+  if (!(isNativeApp() && HealthKit)) { if (manual) toast("Apple Health is only available in the installed app"); return; }
+  const h = state.settings.appleHealth;
+  const kinds = [];
+  if (h.weight) kinds.push("weight");
+  if (h.steps) kinds.push("steps");
+  if (h.sleep) kinds.push("sleep");
+  if (!kinds.length) { if (manual) toast("Turn on at least one type to sync"); return; }
+  try {
+    const avail = await HealthKit.availability();
+    if (!avail.available) { if (manual) toast("Health data isn't available on this device"); return; }
+    const auth = await HealthKit.requestAuthorization({ read: kinds });
+    if (!auth.granted) { if (manual) toast("Apple Health access wasn't granted"); return; }
+    const sinceIso = h.lastSync || fromKey(addDays(todayKey(), -30)).toISOString();
+    let addedWeights = 0;
+    if (h.weight) {
+      const r = await HealthKit.queryWeight({ since: sinceIso });
+      for (const s of (r.samples || [])) {
+        if (state.weights.some((w) => w.ts === s.date)) continue; // already have this exact reading
+        state.weights.push({ d: toKey(new Date(s.date)), ts: s.date, kg: r1(s.kg), src: "health" });
+        addedWeights++;
+      }
+      if (addedWeights) state.weights.sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    }
+    if (h.steps) {
+      const r = await HealthKit.querySteps({ since: sinceIso });
+      for (const d of (r.days || [])) {
+        const l = dayLog(d.date);
+        if (l.stepsSrc === "manual") continue;
+        l.steps = Math.round(d.steps); l.stepsSrc = "health";
+      }
+    }
+    if (h.sleep) {
+      const r = await HealthKit.querySleep({ since: sinceIso });
+      for (const d of (r.days || [])) {
+        const l = dayLog(d.date);
+        if (l.sleepSrc === "manual") continue;
+        l.sleepH = r1(d.hours); l.sleepSrc = "health";
+      }
+    }
+    h.lastSync = new Date().toISOString();
+    save();
+    renderHealthSettings();
+    if (currentView === "today") renderToday();
+    if (currentView === "progress") renderProgress();
+    if (currentView === "body") renderBody();
+    if (manual) toast(addedWeights ? `Synced — ${addedWeights} new weigh-in${addedWeights === 1 ? "" : "s"}` : "Synced with Apple Health");
+  } catch (e) {
+    if (manual) toast("Apple Health sync failed");
+  }
+}
 async function applyReminder() {
   const r = state.settings.reminder;
   const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
@@ -3010,6 +3246,8 @@ function startApp() {
   checkGoals();
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
   if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
+  if (isNativeApp()) syncAppleHealth();
+  maybeShowWhatsNew();
 }
 
 renderIcons();
