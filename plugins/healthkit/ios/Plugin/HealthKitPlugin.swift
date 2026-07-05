@@ -106,7 +106,9 @@ public class HealthKitPlugin: CAPPlugin {
                 if #available(iOS 16.0, *) {
                     asleep = s.value != HKCategoryValueSleepAnalysis.awake.rawValue && s.value != HKCategoryValueSleepAnalysis.inBed.rawValue
                 } else {
-                    asleep = s.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+                    // Pre-iOS-16 HealthKit only had one "asleep" value (.asleep);
+                    // the granular .asleepUnspecified/.asleepCore/etc. replaced it in 16.0.
+                    asleep = s.value == HKCategoryValueSleepAnalysis.asleep.rawValue
                 }
                 guard asleep else { continue }
                 let hours = s.endDate.timeIntervalSince(s.startDate) / 3600.0
