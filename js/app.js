@@ -142,10 +142,10 @@ function renderIcons(root = document) {
 
 /* ---------- data tables ---------- */
 const MEALS = [
-  { id: "breakfast", label: "Breakfast", ic: "sunrise" },
-  { id: "lunch", label: "Lunch", ic: "sun" },
-  { id: "dinner", label: "Dinner", ic: "moon" },
-  { id: "snacks", label: "Snacks", ic: "bowl" },
+  { id: "breakfast", label: "Breakfast", ic: "sunrise", color: "var(--amber)" },
+  { id: "lunch", label: "Lunch", ic: "sun", color: "var(--accent)" },
+  { id: "dinner", label: "Dinner", ic: "moon", color: "var(--purple)" },
+  { id: "snacks", label: "Snacks", ic: "bowl", color: "var(--blue)" },
 ];
 const EXERCISES = [
   { id: "walk", name: "Brisk walk", ic: "walk", met: 4.3 },
@@ -607,19 +607,33 @@ function ringMetrics(k) {
   const mov = p.moveTarget ? t.active / p.moveTarget : 0;
   return { t, budget, cal, pro, mov, remaining: budget - t.kcal };
 }
-function drawRings(m) {
+// Rings that have already played their completion pulse this session, keyed
+// "date-ringKey" — in-memory only (resets on app restart, which is fine for
+// a cosmetic one-time celebration; not worth persisting to dayLog for this).
+const celebratedRings = new Set();
+function drawRings(m, k) {
   const cx = 95, cy = 95;
   const rings = [
-    { r: 83, pct: m.cal, color: "var(--amber)", over: "var(--amber-over)" },
-    { r: 65, pct: m.pro, color: "var(--accent)", over: "var(--accent-over)" },
-    { r: 47, pct: m.mov, color: "var(--blue)", over: "var(--blue-over)" },
+    { key: "cal", r: 83, pct: m.cal, color: "var(--amber)", over: "var(--amber-over)" },
+    { key: "pro", r: 65, pct: m.pro, color: "var(--accent)", over: "var(--accent-over)" },
+    { key: "mov", r: 47, pct: m.mov, color: "var(--blue)", over: "var(--blue-over)" },
   ];
-  let circles = "";
+  let circles = "", justCompleted = false;
   rings.forEach((rg) => {
     // A tiny minimum sliver (like Apple's Activity rings) so each ring still
     // reads as "this ring is orange/green/blue" at exactly 0% instead of
     // looking like a plain dead grey circle before anything's logged.
     const C = 2 * Math.PI * rg.r, pct = rg.pct, first = Math.max(clamp(pct, 0, 1), 0.015);
+    // Only today's rings can "just complete", and only protein/active — going
+    // over on calories is the opposite of an achievement, so that ring never
+    // celebrates. Flipping back to a past day that already hit 100% also
+    // shouldn't replay the celebration.
+    const celebKey = `${k}-${rg.key}`;
+    const celebrates = rg.key !== "cal";
+    const isNewCompletion = celebrates && k === todayKey() && pct >= 1 && !celebratedRings.has(celebKey);
+    if (celebrates && k === todayKey() && pct >= 1) celebratedRings.add(celebKey);
+    if (isNewCompletion) justCompleted = true;
+    circles += `<g${isNewCompletion ? ' class="ring-pulse"' : ""}>`;
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="var(--track)" stroke-width="12"/>`;
     circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - first)}"/>`;
     // Over budget: a second lap wraps over the first in a darker shade of the
@@ -628,6 +642,7 @@ function drawRings(m) {
       const over = Math.min(pct - 1, 1);
       circles += `<circle cx="${cx}" cy="${cy}" r="${rg.r}" fill="none" stroke="${rg.over}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - over)}"/>`;
     }
+    circles += `</g>`;
   });
   $("#ringsWrap").innerHTML =
     `<svg viewBox="0 0 190 190">${circles}</svg>
@@ -635,10 +650,11 @@ function drawRings(m) {
        <span class="big ${m.remaining < 0 ? "over" : ""}">${r0(Math.abs(m.remaining))}</span>
        <label>${m.remaining < 0 ? "OVER" : "kcal left"}</label>
      </div>`;
+  if (justCompleted) haptic();
 }
 function renderStats(k) {
   const m = ringMetrics(k), p = state.profile;
-  drawRings(m);
+  drawRings(m, k);
   $("#ringLegend").innerHTML = [
     { lab: "Calories", val: `${r0(m.t.kcal)}/${r0(m.budget)}`, c: "var(--amber)" },
     { lab: "Protein", val: `${r0(m.t.p)}/${p.proteinTarget}g`, c: "var(--accent)" },
@@ -770,6 +786,7 @@ function renderToday() {
   $("#copyYesterdayBtn").classList.toggle("hidden", !prevHasMeals || todayHasMeals);
 
   renderQuickRow();
+  renderSuggestRow();
   renderMeals(k);
   renderExercises(k);
   renderWater(k);
@@ -811,7 +828,46 @@ function renderQuickRow() {
   $("#quickMore").addEventListener("click", () => openFoodSheet());
 }
 
+// Deterministic (no AI) "what fits" suggestion: recents are checked first —
+// already the most personally relevant and recency-ordered — falling through
+// to the custom-food library and finally the full food DB only if recents
+// don't turn up enough candidates. "Fits" means it wouldn't blow today's
+// remaining calories; ranked toward closing the remaining protein gap once
+// there's a shortlist, since that's usually the harder target to hit.
+function suggestFoods(limit = 3) {
+  const p = state.profile;
+  if (!p) return [];
+  const m = ringMetrics(viewDate);
+  if (m.remaining <= 50) return []; // basically no budget left — nothing meaningfully "fits"
+  const remainingProtein = Math.max(0, p.proteinTarget - m.t.p);
+  const seen = new Set();
+  const rank = (arr) => {
+    const fits = arr.filter((f) => f.kcal > 0 && f.kcal <= m.remaining * 1.15 && !seen.has(f.name.toLowerCase()));
+    fits.forEach((f) => seen.add(f.name.toLowerCase()));
+    fits.sort((a, b) => remainingProtein > 0 ? (b.p || 0) - (a.p || 0) : Math.abs(m.remaining - a.kcal) - Math.abs(m.remaining - b.kcal));
+    return fits;
+  };
+  let out = rank(state.recents);
+  if (out.length < limit) out = out.concat(rank(state.customFoods));
+  if (out.length < limit) out = out.concat(rank(FOOD_DB));
+  return out.slice(0, limit);
+}
+function renderSuggestRow() {
+  const items = suggestFoods();
+  $("#suggestWrap").classList.toggle("hidden", !items.length);
+  if (!items.length) return;
+  $("#suggestRow").innerHTML = items.map((f, i) =>
+    `<button class="quick-chip" data-si="${i}"><div class="qc-name">${esc(f.name)}</div><div class="qc-kcal">${r0(f.kcal)} kcal${f.p ? ` · ${r1(f.p)}g P` : ""}</div></button>`).join("");
+  $$("#suggestRow .quick-chip").forEach((el) =>
+    el.addEventListener("click", () => {
+      const f = items[+el.dataset.si];
+      sheetMeal = defaultMealForNow();
+      addFoodItem({ name: f.name, kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0, qtyLabel: f.serving || "" }, f);
+    }));
+}
+
 const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.id, m.label]));
+const MEAL_COLOR = Object.fromEntries(MEALS.map((m) => [m.id, m.color]));
 function renderMeals(k) {
   const log = dayLog(k);
   // One merged, time-sorted list across all meal buckets — items still carry
@@ -828,7 +884,7 @@ function renderMeals(k) {
       <button class="add-btn" id="mealAddBtn"><span class="ic" data-ic="plus"></span></button>
     </div>
     ${flat.length ? `<ul class="meal-items">` + flat.map(({ mealId, i, it }) =>
-      `<li data-meal="${mealId}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${it.ts ? fmtTime(it.ts) + " · " : ""}${MEAL_LABEL[mealId]}${it.qtyLabel ? " · " + esc(it.qtyLabel) : ""}</span></span>
+      `<li data-meal="${mealId}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${it.ts ? fmtTime(it.ts) + " · " : ""}<span class="meal-tag-dot" style="background:${MEAL_COLOR[mealId]}"></span>${MEAL_LABEL[mealId]}${it.qtyLabel ? " · " + esc(it.qtyLabel) : ""}</span></span>
        <span class="fi-kcal">${r0(it.kcal)}</span>
        <button class="fi-del" data-meal="${mealId}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("") + `</ul>`
       : `<p class="muted" style="margin-top:8px">Nothing logged yet — tap + to add.</p>`}
@@ -1297,9 +1353,19 @@ let manualEstimated = false;
 const KJ_PER_KCAL = 4.184;
 let qCustomMode = "simple", customIngredients = [], ingBasis = "100g", calUnit = "kcal";
 let totalWTouched = false, servWTouched = false;
+let multiParsedItems = null;
+// Leaves the multi-item review list (if it was showing) and restores the
+// normal single-item form + Add/Save button.
+function exitMultiReview() {
+  multiParsedItems = null;
+  $("#multiItemsSection").classList.add("hidden");
+  $("#qSimpleFields").classList.remove("hidden");
+  $("#quickSave").classList.remove("hidden");
+}
 function openQuick(mode, prefill) {
   quickMode = mode;
   manualEstimated = false;
+  exitMultiReview();
   $("#quickTitle").textContent = mode === "custom" ? "New custom food" : mode === "ai" ? "AI estimate" : mode === "edit" ? "Edit food" : mode === "manual" ? "Quick Add" : "Quick add";
   $("#qDescribeWrap").classList.toggle("hidden", mode !== "manual");
   $("#qDesc").value = "";
@@ -1425,6 +1491,51 @@ $("#qEstimate").addEventListener("click", async () => {
     toast("Filled from AI — tweak, then add");
   } catch (err) { toast("AI failed: " + (err.message || "error")); }
   btn.disabled = false; btn.innerHTML = orig;
+});
+function renderMultiItemsList() {
+  $("#multiItemsList").innerHTML = multiParsedItems.length
+    ? multiParsedItems.map((it, i) =>
+        `<li><span class="row-label">${esc(it.name)} <span class="muted">${r0(it.kcal)} kcal</span></span>
+         <button class="fi-del" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+    : `<li class="muted" style="border-top:none">All items removed.</li>`;
+  renderIcons($("#multiItemsList"));
+  wireIndexDelete("#multiItemsList", () => multiParsedItems, renderMultiItemsList, { save: false });
+  makeSwipeable($("#multiItemsList"));
+  $("#multiItemsSaveBtn").textContent = multiParsedItems.length ? `Save ${multiParsedItems.length} item${multiParsedItems.length === 1 ? "" : "s"} to library` : "Save items";
+  $("#multiItemsSaveBtn").disabled = !multiParsedItems.length;
+}
+$("#qEstimateMulti").addEventListener("click", async () => {
+  const desc = $("#qDesc").value.trim();
+  if (!desc) return toast("Describe what you ate first");
+  const btn = $("#qEstimateMulti"), orig = btn.innerHTML;
+  btn.disabled = true; btn.textContent = "Estimating…";
+  const items = await estimateDescriptionMulti(desc);
+  btn.disabled = false; btn.innerHTML = orig;
+  if (!items) return toast("On-device AI unavailable — try single-item Estimate instead");
+  multiParsedItems = items;
+  $("#qSimpleFields").classList.add("hidden");
+  $("#quickSave").classList.add("hidden");
+  $("#multiItemsSection").classList.remove("hidden");
+  renderMultiItemsList();
+  toast(`Found ${items.length} item${items.length === 1 ? "" : "s"} — review, then save`);
+});
+$("#multiItemsSaveBtn").addEventListener("click", () => {
+  if (!multiParsedItems || !multiParsedItems.length) return;
+  let saved = 0;
+  for (const it of multiParsedItems) {
+    const serving = it.serving_g ? `${it.serving_g} g` : "1 serving";
+    const existing = state.customFoods.find((c) => c.name.toLowerCase() === it.name.toLowerCase());
+    if (existing) Object.assign(existing, { serving, kcal: it.kcal, p: it.p, c: it.c, f: it.f });
+    else state.customFoods.unshift({ id: "c" + Date.now() + saved, name: it.name, serving, kcal: it.kcal, p: it.p, c: it.c, f: it.f });
+    saved++;
+  }
+  save();
+  exitMultiReview();
+  $("#quickSheet").classList.add("hidden");
+  sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
+  if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
+  renderFoodList();
+  toast(`Saved ${saved} item${saved === 1 ? "" : "s"} to your library`);
 });
 wireSheetClose("quickSheet", "quickClose");
 let editingCustomFoodId = null;
@@ -1613,6 +1724,24 @@ async function estimateDescription(desc) {
   }
   if (state.settings.apiKey) return aiEstimateText(desc);
   throw new Error("on-device AI unavailable on this device — add an API key in Settings as a fallback");
+}
+// Splits one free-text description into several distinct food items (e.g.
+// "eggs, toast, and coffee" -> 3 items) — on-device only, no cloud fallback
+// (same tradeoff as the exercise NL parsing), since this is a bonus mode on
+// top of the single-item Describe rather than a core path.
+const DESCRIBE_MULTI_PROMPT = 'The user is describing everything they ate in one message — it may be one food or several distinct foods. Split it into separate items only when they are genuinely different foods (do not split a single dish into its ingredients). For each item use a short title-cased name and your best numeric estimate for the described portion, including its total weight in grams. Respond with ONLY a JSON array, no other text, exactly in this shape: [{"name": string, "kcal": integer, "protein_g": integer, "carbs_g": integer, "fat_g": integer, "serving_g": integer}]\n\nDescription: ';
+async function estimateDescriptionMulti(desc) {
+  const text = await aiGenerateText(DESCRIBE_MULTI_PROMPT + desc);
+  if (!text) return null;
+  const m = text.match(/\[[\s\S]*\]/);
+  if (!m) return null;
+  try {
+    const arr = JSON.parse(m[0]);
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const items = arr.filter((j) => j.name && isFinite(+j.kcal))
+      .map((j) => ({ name: j.name, kcal: r0(+j.kcal), p: r2(+j.protein_g || 0), c: r2(+j.carbs_g || 0), f: r2(+j.fat_g || 0), serving_g: +j.serving_g || 0 }));
+    return items.length ? items : null;
+  } catch (e) { return null; }
 }
 // (The standalone "Describe" sheet was folded into the merged "Add manually"
 // flow — its Estimate button lives in #quickSheet now, see #qEstimate above.)
@@ -2437,6 +2566,14 @@ async function updateWeekNarrative(days, ctx) {
     return;
   }
   const myToken = ++weekNarrativeToken;
+  // Avoid a flash-then-hide for the common "on-device AI unavailable" case
+  // (which resolves near-instantly) — only show the shimmer once this is
+  // still pending after a brief delay, meaning the model is actually working.
+  const shimmerTimer = setTimeout(() => {
+    if (myToken !== weekNarrativeToken) return;
+    el.innerHTML = `<span class="shimmer-line"></span>`;
+    el.classList.remove("hidden");
+  }, 150);
   const prompt = `Write one short, plain-English sentence (max 30 words, no markdown, no quotes) summarizing this person's last ${days} days of weight-loss tracking. Be specific, honest, and encouraging.
 Days logged: ${ctx.kcalDays}/${days}
 Avg calories/day: ${ctx.avgK}
@@ -2444,6 +2581,7 @@ Avg deficit vs target/day: ${ctx.avgDef}
 Weight trend: ${ctx.actual != null ? (ctx.actual <= 0 ? "down " : "up ") + Math.abs(r1(ctx.actual)) + "kg" : "not enough weigh-ins to tell"}
 Logging streak: ${ctx.streak} days.`;
   const text = await aiGenerateText(prompt);
+  clearTimeout(shimmerTimer);
   if (myToken !== weekNarrativeToken) return; // superseded by a newer render
   weekNarrativeCache = { key, text: text || "" };
   el.textContent = text || "";

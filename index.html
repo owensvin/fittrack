@@ -125,6 +125,10 @@
           <button class="btn small hidden" id="copyYesterdayBtn"><span class="ic" data-ic="copy"></span>Copy yesterday</button>
         </div>
         <div class="quick-row" id="quickRow"></div>
+        <div id="suggestWrap" class="hidden">
+          <p class="field-label" style="margin-top:12px">Fits your remaining macros</p>
+          <div class="quick-row" id="suggestRow"></div>
+        </div>
       </section>
 
       <!-- Meals -->
@@ -594,6 +598,12 @@
           <label class="field-label">Describe it and let AI estimate</label>
           <textarea id="qDesc" rows="2" placeholder="e.g. large chicken burrito with rice, beans and cheese — or tap your keyboard mic and say it"></textarea>
           <button class="btn ghost full" id="qEstimate"><span class="ic" data-ic="sparkle"></span>Estimate with AI</button>
+          <button class="btn ghost full" id="qEstimateMulti" style="margin-top:8px"><span class="ic" data-ic="layers"></span>Describe multiple items</button>
+          <div id="multiItemsSection" class="hidden" style="margin-top:12px">
+            <p class="field-label">Review before saving</p>
+            <ul class="entry-list" id="multiItemsList"></ul>
+            <button class="btn primary full" id="multiItemsSaveBtn" style="margin-top:10px">Save items</button>
+          </div>
           <p class="qai-or"><span>or enter it directly</span></p>
         </div>
         <p class="muted hidden" id="qNote" style="margin-bottom:10px"></p>
