@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.19";
+const APP_VERSION = "2.20";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -143,6 +143,9 @@ function defaultSupplements() {
 const LS_KEY = "fittrack";
 let state = loadState();
 let viewDate = todayKey();
+// Chart range/mode chips remember the last choice across app restarts.
+const uiPrefs = (state.settings.uiPrefs = state.settings.uiPrefs || {});
+function setPref(key, val) { uiPrefs[key] = val; save(); }
 
 function defaultState() {
   return {
@@ -586,7 +589,7 @@ function renderStats(k) {
 }
 
 /* ---------- Trends (tap the rings) ---------- */
-let trendMetric = "kcal", trendRange = 30;
+let trendMetric = uiPrefs.trendMetric || "kcal", trendRange = uiPrefs.trendRange || 30;
 const TREND_META = {
   kcal: { lab: "Calories", unit: "kcal", color: "var(--orange)", target: () => budgetFor(todayKey()) },
   p: { lab: "Protein", unit: "g", color: "var(--c-protein)", target: () => state.profile.proteinTarget },
@@ -657,8 +660,8 @@ function openTrends() { renderExpenditureCard(); renderTrends(); $("#trendsSheet
 $("#ringsWrap").addEventListener("click", openTrends);
 $("#trendsClose").addEventListener("click", () => $("#trendsSheet").classList.add("hidden"));
 $("#trendsSheet").addEventListener("click", (e) => { if (e.target.id === "trendsSheet") $("#trendsSheet").classList.add("hidden"); });
-$("#trendMetricChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendMetric = b.dataset.m; renderTrends(); });
-$("#trendRangeChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendRange = +b.dataset.d; renderTrends(); });
+$("#trendMetricChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendMetric = b.dataset.m; setPref("trendMetric", trendMetric); renderTrends(); });
+$("#trendRangeChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; trendRange = +b.dataset.d; setPref("trendRange", trendRange); renderTrends(); });
 
 /* ---------- streaks ----------
    Two different things people mean by "streak": did you show up and log
@@ -918,7 +921,7 @@ function dayMealTimes(dk) {
   return times.sort((a, b) => a - b);
 }
 function fmtHm(mins) { const h = Math.floor(mins / 60), m = mins % 60; return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`; }
-let mealGapsRange = 30;
+let mealGapsRange = uiPrefs.mealGapsRange || 30;
 function renderMealGapsChart() {
   const days = mealGapsRange;
   const W = 340, H = 260, L = 34, R = 8, T = 12, B = 22;
@@ -970,15 +973,16 @@ function renderMealGapsChart() {
 }
 $("#mealGapsRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  mealGapsRange = +b.dataset.d; renderMealGapsChart();
+  mealGapsRange = +b.dataset.d; setPref("mealGapsRange", mealGapsRange); renderMealGapsChart();
 });
 // Tap anywhere on an "expandable" card to open its full-screen view — except
-// on charts (so tap-tooltips still work) or interactive controls (inputs,
-// buttons, selects) which need their normal behaviour.
+// interactive controls (inputs, buttons, selects) which need their normal
+// behaviour. Compact-card charts here have no tooltips, so tapping the chart
+// itself is a valid way to expand too — it's not a dead zone.
 function makeCardExpandable(sel, openFn) {
   const el = $(sel); if (!el) return;
   el.addEventListener("click", (e) => {
-    if (e.target.closest("button, input, select, textarea, a, .chart, svg")) return;
+    if (e.target.closest("button, input, select, textarea, a")) return;
     openFn();
   });
 }
@@ -1955,7 +1959,7 @@ function renderGoalCards() {
   renderIcons($("#achievedGoalCards"));
 }
 
-function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel }) {
+function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel, tooltips = true }) {
   const line = color || "var(--accent)";
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
@@ -1981,7 +1985,7 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalCol
   const Xn = (n) => L + (n / xMax) * (W - L - R);
   const Y = (v) => T + (1 - (v - vMin) / (vMax - vMin)) * (H - T - B);
   const dots = entries.map((e) =>
-    `<circle data-tip="${fmtShort(e.d)}${e.ts ? " " + fmtTime(e.ts) : ""} · ${r1(e.kg)} ${unit}" cx="${Xn(xNum(e)).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)" stroke="transparent" stroke-width="14"/>`).join("");
+    `<circle${tooltips ? ` data-tip="${fmtShort(e.d)}${e.ts ? " " + fmtTime(e.ts) : ""} · ${r1(e.kg)} ${unit}"` : ""} cx="${Xn(xNum(e)).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)" stroke="transparent" stroke-width="${tooltips ? 14 : 0}"/>`).join("");
   // Light "scale weight" line joining every raw reading, under the smooth trend.
   const rawPath = rawLine ? `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${Xn(xNum(e)).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5" stroke-linejoin="round"/>` : "";
   const maPath = ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("");
@@ -2003,34 +2007,36 @@ function inRange(entries, days) {
   const from = addDays(todayKey(), -(days - 1));
   return entries.filter((e) => e.d >= from);
 }
-let weightRange = 30, calRange = 30;
+const WEIGHT_CARD_DAYS = 7, WAIST_CARD_DAYS = 30;
+let calRange = uiPrefs.calRange || 30;
+// Compact card: fixed to the last 7 days, no filters or tooltips — the tap
+// target for "more information" is the card itself (see makeCardExpandable),
+// which opens the full-screen chart with every range/goal/detail option.
 function renderWeightChart() {
   const fullMa = movingAvg(state.weights);
-  const entries = inRange(state.weights, weightRange), ma = inRange(fullMa, weightRange);
-  const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const farGoal = sortedGoals[sortedGoals.length - 1];
-  // Cap the projection so it can't dominate the x-axis — otherwise every
-  // range setting renders on a months-long axis and looks identical.
-  const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightRange / 2)) : 0;
-  // Achieved goals always stay on the chart; active (still-open) goals are
-  // capped to the nearest 2 by date so the chart doesn't get cluttered.
-  const activeSorted = sortedGoals.filter((g) => !g.achievedOn);
-  const achievedSorted = sortedGoals.filter((g) => g.achievedOn);
-  const goalLines = achievedSorted.map((g) => ({ v: g.targetKg, achieved: true }))
-    .concat(activeSorted.slice(0, 2).map((g) => ({ v: g.targetKg, achieved: false })));
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true, color: "var(--purple)" });
+  const entries = inRange(state.weights, WEIGHT_CARD_DAYS), ma = inRange(fullMa, WEIGHT_CARD_DAYS);
+  // Only show a goal line if its target already falls near the recent data —
+  // otherwise a far-off goal would stretch this small chart's y-axis until the
+  // actual week-to-week fluctuation flattens out to nothing.
+  let goalLines = [];
+  if (entries.length >= 2) {
+    const vals = entries.map((e) => e.kg).concat(ma.map((m) => m.v));
+    const vMin = Math.min(...vals), vMax = Math.max(...vals);
+    const pad = Math.max(0.5, (vMax - vMin) * 0.15);
+    const lo = vMin - pad, hi = vMax + pad;
+    goalLines = state.goals
+      .filter((g) => g.targetKg >= lo && g.targetKg <= hi)
+      .map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  }
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays: 0, rawLine: true, color: "var(--purple)", tooltips: false });
+  $("#weightLegendGoal").classList.toggle("hidden", !goalLines.length);
   if (entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
     const diff = ma[ma.length - 1].v - ma[0].v;
     $("#weightDelta").innerHTML = `<span class="trend-hd"><b>${r1(avg)}</b> avg · <b class="${diff <= 0 ? "t-green" : "t-amber"}">${diff <= 0 ? "" : "+"}${r1(diff)} kg</b> trend</span>`;
   } else $("#weightDelta").textContent = "";
-  $$("#weightRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightRange));
 }
-$("#weightRangeChips").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  weightRange = +b.dataset.d; renderWeightChart(); renderWaistChart();
-});
-let weightFullRange = 180, weightFullMode = "scale", weightFullGoalIds = null;
+let weightFullRange = uiPrefs.weightFullRange || 180, weightFullMode = uiPrefs.weightFullMode || "scale", weightFullGoalIds = null;
 // A quick energy-balance-style delta: how much the trend line moved over the
 // last N days, using the full (unrestricted) moving average so it's stable
 // regardless of which range chip is selected.
@@ -2041,6 +2047,28 @@ function weightChangeOverDays(fullMa, days) {
   if (!past) return null;
   return r1(fullMa[fullMa.length - 1].v - past.v);
 }
+// "Detailed Trend": a fixed-zoom (7-days-visible) horizontally scrollable chart
+// — raw dots + smoothed line, no goals, no tooltips — so daily texture that
+// gets compressed away on a months-wide chart is visible again.
+function detailedTrendChart({ entries, ma, pxPerDay }) {
+  const H = 170, L = 34, R = 8, T = 12, B = 22;
+  const x0 = entries[0].d;
+  const totalDays = Math.max(6, daysBetween(x0, entries[entries.length - 1].d));
+  const W = Math.max(340, L + R + totalDays * pxPerDay);
+  const X = (d) => L + daysBetween(x0, d) * pxPerDay;
+  const vals = entries.map((e) => e.kg).concat(ma.map((m) => m.v));
+  let vMin = Math.min(...vals), vMax = Math.max(...vals);
+  const pad = Math.max(0.5, (vMax - vMin) * 0.15); vMin -= pad; vMax += pad;
+  const Y = (v) => T + (1 - (v - vMin) / (vMax - vMin)) * (H - T - B);
+  const dots = entries.map((e) => `<circle cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)"/>`).join("");
+  const rawPath = `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${X(e.d).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5"/>`;
+  const maPath = `<path d="${ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--purple)" stroke-width="2.5" stroke-linecap="round"/>`;
+  let dayLabels = "";
+  for (let i = 0; i <= totalDays; i += 7) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="9" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
+  return `<div class="detail-scroll" id="weightDetailScroll"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>
+    ${dayLabels}${rawPath}${maPath}${dots}</svg></div>`;
+}
 function renderWeightFull() {
   const fullMa = movingAvg(state.weights);
   const entries = inRange(state.weights, weightFullRange), ma = inRange(fullMa, weightFullRange);
@@ -2048,18 +2076,25 @@ function renderWeightFull() {
   // Default to showing every goal the first time this opens.
   if (!weightFullGoalIds) weightFullGoalIds = new Set(sortedGoals.map((g) => g.id));
   const shownGoals = sortedGoals.filter((g) => weightFullGoalIds.has(g.id));
-  const farGoal = shownGoals[shownGoals.length - 1];
-  const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
-  const goalLines = shownGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
-  // "Scale Weight" shows the raw daily readings + trend; "Trend Weight" is the
-  // smoothed line on its own, closer to what MacroFactor calls the trend view.
-  const rawLine = weightFullMode === "scale";
-  $("#weightFullChart").innerHTML = entries.length >= 2
-    ? lineChart({ entries: rawLine ? entries : ma.map((m) => ({ d: m.d, kg: m.v })), ma, goals: goalLines, unit: "kg", projDays, rawLine, color: "var(--purple)" })
-    : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
-  $("#weightFullLegend").innerHTML = rawLine
-    ? `<span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span>`
-    : `<span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span>`;
+  const isDetailed = weightFullMode === "trend";
+  $("#weightFullGoalSection").classList.toggle("hidden", isDetailed);
+  $("#weightFullLegend").classList.toggle("hidden", isDetailed);
+  $("#weightFullScrollHint").classList.toggle("hidden", !isDetailed);
+  if (isDetailed) {
+    $("#weightFullChart").innerHTML = entries.length >= 2
+      ? detailedTrendChart({ entries, ma, pxPerDay: 340 / 7 })
+      : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
+    const scroller = $("#weightDetailScroll");
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth; // land on the most recent week
+  } else {
+    const farGoal = shownGoals[shownGoals.length - 1];
+    const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
+    const goalLines = shownGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+    $("#weightFullChart").innerHTML = entries.length >= 2
+      ? lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true, color: "var(--purple)" })
+      : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
+    $("#weightFullLegend").innerHTML = `<span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span>`;
+  }
   $$("#weightFullRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightFullRange));
   $$("#weightModeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === weightFullMode));
   $("#weightFullGoalChips").innerHTML = sortedGoals.length
@@ -2094,11 +2129,11 @@ $("#weightFullClose").addEventListener("click", () => $("#weightFullSheet").clas
 $("#weightFullSheet").addEventListener("click", (e) => { if (e.target.id === "weightFullSheet") $("#weightFullSheet").classList.add("hidden"); });
 $("#weightFullRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  weightFullRange = +b.dataset.d; renderWeightFull();
+  weightFullRange = +b.dataset.d; setPref("weightFullRange", weightFullRange); renderWeightFull();
 });
 $("#weightModeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  weightFullMode = b.dataset.val; renderWeightFull();
+  weightFullMode = b.dataset.val; setPref("weightFullMode", weightFullMode); renderWeightFull();
 });
 $("#weightFullGoalChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b || !b.dataset.id) return;
@@ -2107,7 +2142,7 @@ $("#weightFullGoalChips").addEventListener("click", (e) => {
 });
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
-  const entries = inRange(allEntries, weightRange), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
+  const entries = inRange(allEntries, WAIST_CARD_DAYS), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
   $("#waistChart").innerHTML = lineChart({ entries, ma, goals: [], unit: "cm", projDays: 0, color: "var(--blue)" });
   $("#waistDelta").textContent = state.waists.length >= 2 ? `${(state.waists[state.waists.length - 1].cm - state.waists[0].cm) <= 0 ? "" : "+"}${r1(state.waists[state.waists.length - 1].cm - state.waists[0].cm)} cm since start` : "measure weekly to track belly progress";
 }
@@ -2148,9 +2183,9 @@ function renderCalChart() {
 }
 $("#calRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  calRange = +b.dataset.d; renderCalChart();
+  calRange = +b.dataset.d; setPref("calRange", calRange); renderCalChart();
 });
-let summaryPeriod = 7;
+let summaryPeriod = uiPrefs.summaryPeriod || 7;
 function renderWeekCard() {
   const days = summaryPeriod;
   let kcalSum = 0, kcalDays = 0, walkDays = 0;
@@ -2199,7 +2234,7 @@ function renderWeekCard() {
       <div class="stat-box"><div class="v">${streak()}</div><div class="k">day streak</div></div>
     </div>`;
   renderIcons($("#weekCard"));
-  $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; renderWeekCard(); }));
+  $$("#summaryChips button").forEach((b) => b.addEventListener("click", () => { summaryPeriod = +b.dataset.d; setPref("summaryPeriod", summaryPeriod); renderWeekCard(); }));
 }
 
 /* ---------- swipe-left-to-delete ---------- */

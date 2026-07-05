@@ -342,6 +342,10 @@ textarea { resize: none; line-height: 1.5; }
 /* ===== Charts ===== */
 .chart { width: 100%; }
 .chart svg { width: 100%; height: auto; display: block; }
+/* Detailed Trend: a fixed-pixel-width chart the user scrolls through 7 days
+   at a time, so it must NOT stretch to 100% like every other chart's svg. */
+.chart .detail-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.chart .detail-scroll svg { width: auto; }
 .legend { display: flex; gap: 14px; margin-top: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .lg::before { content: "●"; margin-right: 5px; }
 .dot-raw::before { color: var(--muted2); } .dot-ma::before { color: var(--ma-color, var(--accent)); } .dot-goal::before { color: var(--amber); }
