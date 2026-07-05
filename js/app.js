@@ -9,7 +9,7 @@ const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.21";
+const APP_VERSION = "2.22";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1964,7 +1964,8 @@ function renderGoalCards() {
 
 function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel, tooltips = true, dateLabels = "ends" }) {
   const line = color || "var(--accent)";
-  const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
+  // Angled per-day labels ("all" mode) need a bit more room at the bottom.
+  const W = 340, H = 170, L = 34, R = 8, T = 12, B = dateLabels === "all" ? 30 : 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
   const x0 = entries[0].d;
   // Fractional day position so several weigh-ins on the same day fan out by
@@ -2001,9 +2002,9 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalCol
   // "all" labels every date (only sensible for a short, few-day window like
   // the compact 7-day card); otherwise just the two endpoints as usual.
   const xLabels = dateLabels === "all"
-    ? [...new Set(entries.map((e) => e.d))].map((dk, i, arr) => {
-        const anchor = i === 0 ? "start" : i === arr.length - 1 ? "end" : "middle";
-        return `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="${anchor}">${fromKey(dk).getDate()}</text>`;
+    ? [...new Set(entries.map((e) => e.d))].map((dk) => {
+        const lx = X(dk).toFixed(1), ly = (H - B + 10).toFixed(1);
+        return `<text x="${lx}" y="${ly}" font-size="8" fill="var(--muted)" text-anchor="end" transform="rotate(-40 ${lx} ${ly})">${fmtShort(dk)}</text>`;
       }).join("")
     : `<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(first.d)}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -2058,11 +2059,26 @@ function weightChangeOverDays(fullMa, days) {
   if (!past) return null;
   return r1(fullMa[fullMa.length - 1].v - past.v);
 }
+// Catmull-Rom → cubic Bezier: turns a jagged connect-the-dots line into a
+// proper smooth curve (the "silky" trend line MacroFactor's chart uses).
+function smoothPathD(pts) {
+  if (pts.length < 2) return "";
+  if (pts.length === 2) return `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)} L${pts[1].x.toFixed(1)},${pts[1].y.toFixed(1)}`;
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)} `;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+    d += `C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)} `;
+  }
+  return d;
+}
 // "Detailed Trend": a fixed-zoom (7-days-visible) horizontally scrollable chart
-// — raw dots + smoothed line, no goals, no tooltips — so daily texture that
-// gets compressed away on a months-wide chart is visible again.
-function detailedTrendChart({ entries, ma, pxPerDay }) {
-  const H = 170, L = 34, R = 8, T = 12, B = 22;
+// — raw dots + a smoothed trend curve, no goals, no tooltips — so daily texture
+// that gets compressed away on a months-wide chart is visible again. Styled
+// after MacroFactor's weight-trend chart: y-axis on the right, full x-axis.
+function detailedTrendChart({ entries, ma, pxPerDay, zoom }) {
+  const H = 170, L = 8, R = 40, T = 14, B = 24;
   const x0 = entries[0].d;
   const totalDays = Math.max(6, daysBetween(x0, entries[entries.length - 1].d));
   const W = Math.max(340, L + R + totalDays * pxPerDay);
@@ -2073,12 +2089,24 @@ function detailedTrendChart({ entries, ma, pxPerDay }) {
   const Y = (v) => T + (1 - (v - vMin) / (vMax - vMin)) * (H - T - B);
   const dots = entries.map((e) => `<circle cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)"/>`).join("");
   const rawPath = `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${X(e.d).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5"/>`;
-  const maPath = `<path d="${ma.map((m, i) => `${i ? "L" : "M"}${X(m.d).toFixed(1)},${Y(m.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--purple)" stroke-width="2.5" stroke-linecap="round"/>`;
+  const maPath = `<path d="${smoothPathD(ma.map((m) => ({ x: X(m.d), y: Y(m.v) })))}" fill="none" stroke="var(--purple)" stroke-width="2.5" stroke-linecap="round"/>`;
+  // Y-axis on the right with 3 evenly spaced dashed gridlines, like the reference.
+  const gridVals = [vMax - pad, (vMin + vMax) / 2, vMin + pad];
+  const grid = gridVals.map((v) => {
+    const y = Y(v).toFixed(1);
+    return `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${(W - R + 6).toFixed(1)}" y="${(+y + 3).toFixed(1)}" font-size="9" fill="var(--muted)">${r1(v)}</text>`;
+  }).join("");
+  // Full x-axis: every day labelled by weekday when zoomed to a week (matches
+  // the reference's Sun/Mon/Tue…); monthly zoom is too narrow for that, so it
+  // labels every 5th day with a short date instead.
   let dayLabels = "";
-  for (let i = 0; i <= totalDays; i += 7) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="9" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
+  if (zoom === "month") {
+    for (let i = 0; i <= totalDays; i += 5) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
+  } else {
+    for (let i = 0; i <= totalDays; i++) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fromKey(dk).toLocaleDateString(undefined, { weekday: "short" })}</text>`; }
+  }
   return `<div class="detail-scroll" id="weightDetailScroll"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
-    <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>
-    ${dayLabels}${rawPath}${maPath}${dots}</svg></div>`;
+    ${grid}${dayLabels}${rawPath}${maPath}${dots}</svg></div>`;
 }
 function renderWeightFull() {
   const fullMa = movingAvg(state.weights);
@@ -2107,7 +2135,7 @@ function renderWeightFull() {
   const ma = isDetailed ? fullMa : inRange(fullMa, weightFullRange);
   if (isDetailed) {
     $("#weightFullChart").innerHTML = entries.length >= 2
-      ? detailedTrendChart({ entries, ma, pxPerDay: weightDetailZoom === "month" ? 340 / 30 : 340 / 7 })
+      ? detailedTrendChart({ entries, ma, pxPerDay: weightDetailZoom === "month" ? 340 / 30 : 340 / 7, zoom: weightDetailZoom })
       : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
     const scroller = $("#weightDetailScroll");
     if (scroller) scroller.scrollLeft = scroller.scrollWidth; // land on the most recent period
