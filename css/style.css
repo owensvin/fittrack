@@ -159,9 +159,10 @@ textarea { resize: none; line-height: 1.5; }
   border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
   color: var(--text); background: var(--card2);
 }
-.add-btn { width: 30px; height: 30px; border-radius: 50%; }
-.add-btn .ic { width: 15px; height: 15px; color: var(--muted); }
+.add-btn { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-dim); }
+.add-btn .ic { width: 15px; height: 15px; color: var(--accent); }
 .round-btn { width: 42px; height: 42px; border-radius: 50%; font-size: 1.3rem; font-weight: 400; flex-shrink: 0; }
+.round-btn .ic { width: 18px; height: 18px; color: var(--text); }
 
 /* ===== Onboarding ===== */
 .onboarding {
@@ -280,8 +281,10 @@ textarea { resize: none; line-height: 1.5; }
 .meal-head { display: flex; align-items: center; }
 .meal-head h3 { font-size: var(--fs-base); font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .meal-ic { color: var(--amber); }
-.meal-subheader { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 4px; }
+.meal-subheader { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 4px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .meal-subheader:first-of-type { margin-top: 10px; }
+.meal-subheader .ic { width: 13px; height: 13px; color: var(--amber); }
+.meal-sub-kcal { margin-left: auto; font-variant-numeric: tabular-nums; }
 
 .shimmer-line {
   display: block; height: 13px; width: 75%; border-radius: 4px;
@@ -312,8 +315,7 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 }
 .meal-kcal { color: var(--muted); font-size: var(--fs-sm); margin-left: auto; margin-right: 12px; font-variant-numeric: tabular-nums; }
 .meal-items { list-style: none; }
-.meal-items li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--border); font-size: var(--fs-base); cursor: pointer; }
-.meal-items li:first-child { margin-top: 6px; }
+.meal-items li { display: flex; align-items: center; gap: 8px; padding: 9px 0; font-size: var(--fs-base); cursor: pointer; }
 .meal-items .fi-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .meal-items .fi-qty { color: var(--muted); font-size: var(--fs-xs); }
 .meal-items .fi-kcal { font-weight: 600; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
@@ -578,8 +580,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .swipe-row { position: relative; overflow: hidden; }
 .swipe-content { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--card); position: relative; z-index: 1; transform: translateX(0); touch-action: pan-y; }
 .swipe-content.between { justify-content: space-between; }
-.swipe-content .fi-del { display: none !important; }
+.swipe-content .fi-del, .swipe-content .fi-edit { display: none !important; }
 .swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; border: none; background: var(--red); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.swipe-edit { position: absolute; top: 0; right: 84px; bottom: 0; width: 84px; border: none; background: var(--blue); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .chart-tip {
   position: fixed; z-index: 99; transform: translate(-50%, -100%);
   background: var(--card2); color: var(--text); border: 1px solid var(--border);

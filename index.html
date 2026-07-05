@@ -147,9 +147,9 @@
       <section class="card hidden" id="waterCard">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="drop"></span>Water</h3><span id="waterText" class="muted"></span></div>
         <div class="water-row">
-          <button class="round-btn" id="waterMinus">−</button>
+          <button class="round-btn" id="waterMinus"><span class="ic" data-ic="minus"></span></button>
           <div class="water-glasses" id="waterGlasses"></div>
-          <button class="round-btn" id="waterPlus">+</button>
+          <button class="round-btn" id="waterPlus"><span class="ic" data-ic="plus"></span></button>
         </div>
       </section>
 
@@ -318,11 +318,10 @@
     <!-- SETTINGS -->
     <main id="view-settings" class="view hidden">
       <header class="page-header"><h1>Settings</h1></header>
-      <section class="card">
-        <div class="card-head"><h3>Your Plan</h3><button class="btn small" id="planEditBtn">Edit</button></div>
-        <div id="planSummary" class="stat-grid"></div>
+      <section class="card" id="profileCard">
+        <div class="card-head"><h3>Profile</h3></div>
+        <div id="profileSummary" class="stat-grid"></div>
         <div id="profileForm" class="hidden">
-          <p class="field-label" style="margin-top:14px">Profile</p>
           <div class="form-grid">
             <label>Date of birth <input type="date" id="setDob"></label>
             <label>Sex
@@ -331,10 +330,15 @@
             <label>Initial weight (kg) <input type="number" id="setStartWeight" inputmode="decimal" step="0.1"></label>
           </div>
           <button class="btn primary full" id="profileSave">Save profile</button>
+          <button class="btn ghost full" id="profileCancelBtn">Cancel</button>
         </div>
+        <p class="muted center" style="margin-top:10px">Long press to edit</p>
+      </section>
+      <section class="card" id="targetsCard">
+        <div class="card-head"><h3>Targets</h3></div>
+        <div id="targetsSummary" class="stat-grid"></div>
         <div id="targetsForm" class="hidden">
-          <p class="field-label" style="margin-top:14px">Targets</p>
-          <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
+          <label class="field-label" style="margin-top:14px">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
           <div class="slider" id="paceTiers"></div>
           <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
           <div class="form-grid">
@@ -364,11 +368,13 @@
             <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
           </div>
           <button class="btn primary full" id="settingsSave">Save targets</button>
+          <button class="btn ghost full" id="targetsCancelBtn">Cancel</button>
         </div>
         <p class="muted center" id="settingsInfo"></p>
+        <p class="muted center" style="margin-top:10px">Long press to edit</p>
       </section>
       <section class="card">
-        <div class="card-head"><h3>Goals</h3><button class="btn small" id="goalNewBtn">Add</button></div>
+        <div class="card-head"><h3>Goals</h3><button class="add-btn" id="goalNewBtn"><span class="ic" data-ic="plus"></span></button></div>
         <ul id="goalSettingsList" class="entry-list"></ul>
         <div id="goalForm" class="hidden">
           <div class="form-grid" style="margin-top:12px">
@@ -381,7 +387,7 @@
         </div>
       </section>
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><button class="btn small" id="suppNewBtn">Add</button></div>
+        <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><button class="add-btn" id="suppNewBtn"><span class="ic" data-ic="plus"></span></button></div>
         <ul id="suppSettingsList" class="entry-list"></ul>
         <div id="suppForm" class="hidden">
           <div class="form-grid" style="margin-top:12px">
