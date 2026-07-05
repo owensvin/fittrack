@@ -7,8 +7,9 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
+const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.20";
+const APP_VERSION = "2.21";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1197,7 +1198,7 @@ $("#detailAdd").addEventListener("click", () => {
     if (existing) Object.assign(existing, { serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
     else state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
   }
-  addFoodItem({ name: f.name, kcal: f.kcal * k, p: (f.p || 0) * k, c: (f.c || 0) * k, f: (f.f || 0) * k, qtyLabel, ts }, f);
+  addFoodItem({ name: f.name, kcal: r0(f.kcal * k), p: r2((f.p || 0) * k), c: r2((f.c || 0) * k), f: r2((f.f || 0) * k), qtyLabel, ts }, f);
   $("#detailSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
 });
 
@@ -1326,7 +1327,9 @@ $("#ingAddBtn").addEventListener("click", () => {
 function openEditFood(mealId, i) {
   const item = dayLog(viewDate).meals[mealId][i];
   editTarget = { mealId, i };
-  openQuick("edit", { name: item.name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, ts: item.ts });
+  // Defensive rounding: older entries logged before macros were rounded at
+  // save-time can still carry float noise (e.g. 29.999999999999999).
+  openQuick("edit", { name: item.name, kcal: r0(item.kcal), p: r2(item.p || 0), c: r2(item.c || 0), f: r2(item.f || 0), ts: item.ts });
 }
 $("#addManualBtn").addEventListener("click", () => openQuick("manual"));
 $("#customFoodBtn").addEventListener("click", () => openQuick("custom"));
@@ -1959,7 +1962,7 @@ function renderGoalCards() {
   renderIcons($("#achievedGoalCards"));
 }
 
-function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel, tooltips = true }) {
+function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalColor, goalLabel, tooltips = true, dateLabels = "ends" }) {
   const line = color || "var(--accent)";
   const W = 340, H = 170, L = 34, R = 8, T = 12, B = 22;
   if (entries.length < 2) return `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
@@ -1995,10 +1998,17 @@ function lineChart({ entries, ma, goals, unit, projDays, rawLine, color, goalCol
   }).join("");
   const projLine = proj ? `<line x1="${Xn(proj.x1).toFixed(1)}" y1="${Y(proj.v1).toFixed(1)}" x2="${Xn(proj.x2).toFixed(1)}" y2="${Y(proj.v2).toFixed(1)}" stroke="${line}" stroke-width="1.5" stroke-dasharray="2 4" opacity=".7"/>` : "";
   const first = entries[0], last = entries[entries.length - 1];
+  // "all" labels every date (only sensible for a short, few-day window like
+  // the compact 7-day card); otherwise just the two endpoints as usual.
+  const xLabels = dateLabels === "all"
+    ? [...new Set(entries.map((e) => e.d))].map((dk, i, arr) => {
+        const anchor = i === 0 ? "start" : i === arr.length - 1 ? "end" : "middle";
+        return `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="${anchor}">${fromKey(dk).getDate()}</text>`;
+      }).join("")
+    : `<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(first.d)}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
     <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--border)"/>
-    <text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(first.d)}</text>
-    <text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">${proj ? fmtShort(addDays(x0, Math.round(xMax))) : fmtShort(last.d)}</text>
+    ${xLabels}
     <text x="${L - 4}" y="${(Y(vMax - pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMax - pad)}</text>
     <text x="${L - 4}" y="${(Y(vMin + pad) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${r1(vMin + pad)}</text>
     ${goalLines}${rawPath}<path d="${maPath}" fill="none" stroke="${line}" stroke-width="2.5" stroke-linecap="round"/>${projLine}${dots}</svg>`;
@@ -2028,7 +2038,7 @@ function renderWeightChart() {
       .filter((g) => g.targetKg >= lo && g.targetKg <= hi)
       .map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
   }
-  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays: 0, rawLine: true, color: "var(--purple)", tooltips: false });
+  $("#weightChart").innerHTML = lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays: 0, rawLine: true, color: "var(--purple)", tooltips: false, dateLabels: "all" });
   $("#weightLegendGoal").classList.toggle("hidden", !goalLines.length);
   if (entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
@@ -2037,6 +2047,7 @@ function renderWeightChart() {
   } else $("#weightDelta").textContent = "";
 }
 let weightFullRange = uiPrefs.weightFullRange || 180, weightFullMode = uiPrefs.weightFullMode || "scale", weightFullGoalIds = null;
+let weightDetailZoom = uiPrefs.weightDetailZoom || "week";
 // A quick energy-balance-style delta: how much the trend line moved over the
 // last N days, using the full (unrestricted) moving average so it's stable
 // regardless of which range chip is selected.
@@ -2071,7 +2082,6 @@ function detailedTrendChart({ entries, ma, pxPerDay }) {
 }
 function renderWeightFull() {
   const fullMa = movingAvg(state.weights);
-  const entries = inRange(state.weights, weightFullRange), ma = inRange(fullMa, weightFullRange);
   const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
   // Default to showing every goal the first time this opens.
   if (!weightFullGoalIds) weightFullGoalIds = new Set(sortedGoals.map((g) => g.id));
@@ -2080,12 +2090,27 @@ function renderWeightFull() {
   $("#weightFullGoalSection").classList.toggle("hidden", isDetailed);
   $("#weightFullLegend").classList.toggle("hidden", isDetailed);
   $("#weightFullScrollHint").classList.toggle("hidden", !isDetailed);
+  $("#weightFullRangeChips").classList.toggle("hidden", isDetailed);
+  $("#weightDetailZoomSeg").classList.toggle("hidden", !isDetailed);
+  $("#weightFullInsightsSection").classList.toggle("hidden", !isDetailed);
+  $("#weightFullStatsSection").classList.toggle("hidden", isDetailed);
+  // Detailed Trend always scrolls the user's FULL history (not the Scale Weight
+  // range chip) — Monthly zoom is disabled until there's enough of it to matter.
+  const historySpanDays = state.weights.length >= 2 ? daysBetween(state.weights[0].d, state.weights[state.weights.length - 1].d) : 0;
+  const monthlyEnabled = historySpanDays >= 30;
+  if (weightDetailZoom === "month" && !monthlyEnabled) { weightDetailZoom = "week"; setPref("weightDetailZoom", "week"); }
+  $$("#weightDetailZoomSeg button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.val === weightDetailZoom);
+    b.disabled = b.dataset.val === "month" && !monthlyEnabled;
+  });
+  const entries = isDetailed ? state.weights : inRange(state.weights, weightFullRange);
+  const ma = isDetailed ? fullMa : inRange(fullMa, weightFullRange);
   if (isDetailed) {
     $("#weightFullChart").innerHTML = entries.length >= 2
-      ? detailedTrendChart({ entries, ma, pxPerDay: 340 / 7 })
+      ? detailedTrendChart({ entries, ma, pxPerDay: weightDetailZoom === "month" ? 340 / 30 : 340 / 7 })
       : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
     const scroller = $("#weightDetailScroll");
-    if (scroller) scroller.scrollLeft = scroller.scrollWidth; // land on the most recent week
+    if (scroller) scroller.scrollLeft = scroller.scrollWidth; // land on the most recent period
   } else {
     const farGoal = shownGoals[shownGoals.length - 1];
     const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
@@ -2104,7 +2129,7 @@ function renderWeightFull() {
   $("#weightFullInsights").innerHTML = `
     <div class="stat-box"><div class="v ${d3 == null ? "" : d3 <= 0 ? "t-green" : "t-amber"}">${d3 == null ? "—" : (d3 <= 0 ? "" : "+") + d3 + " kg"}</div><div class="k">3-day change</div></div>
     <div class="stat-box"><div class="v ${d7 == null ? "" : d7 <= 0 ? "t-green" : "t-amber"}">${d7 == null ? "—" : (d7 <= 0 ? "" : "+") + d7 + " kg"}</div><div class="k">7-day change</div></div>`;
-  if (entries.length >= 2) {
+  if (!isDetailed && entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
     const trendWk = ma.length >= 2 ? r1((ma[ma.length - 1].v - ma[0].v) / (daysBetween(ma[0].d, ma[ma.length - 1].d) / 7)) : null;
     const vals = entries.map((e) => e.kg);
@@ -2134,6 +2159,10 @@ $("#weightFullRangeChips").addEventListener("click", (e) => {
 $("#weightModeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightFullMode = b.dataset.val; setPref("weightFullMode", weightFullMode); renderWeightFull();
+});
+$("#weightDetailZoomSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b || b.disabled) return;
+  weightDetailZoom = b.dataset.val; setPref("weightDetailZoom", weightDetailZoom); renderWeightFull();
 });
 $("#weightFullGoalChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b || !b.dataset.id) return;

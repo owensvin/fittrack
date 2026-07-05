@@ -805,19 +805,27 @@
           <button data-d="365">1Y</button>
           <button data-d="9999">All</button>
         </div>
+        <div class="segmented hidden" id="weightDetailZoomSeg" style="margin-top:10px">
+          <button data-val="week" class="active">Weekly</button>
+          <button data-val="month">Monthly</button>
+        </div>
         <div id="weightFullChart" class="chart"></div>
         <p class="legend purple" id="weightFullLegend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
-        <p class="muted hidden" id="weightFullScrollHint">Scroll horizontally to move week by week — no goals or tooltips here, just the raw detail.</p>
+        <p class="muted hidden" id="weightFullScrollHint">Scroll horizontally for more history — no goals or tooltips here, just the raw detail.</p>
         <div id="weightFullGoalSection">
           <p class="field-label">Goals shown <span class="muted" style="font-weight:400">(tap to toggle)</span></p>
           <div class="chips" id="weightFullGoalChips"></div>
         </div>
-        <p class="field-label">Insights &amp; Data</p>
-        <div class="stat-grid" id="weightFullInsights" style="margin-bottom:8px"></div>
-        <p class="field-label">Stats</p>
-        <div class="stat-grid" id="weightFullStats"></div>
-        <p class="field-label">Goals</p>
-        <div id="weightFullGoals"></div>
+        <div id="weightFullInsightsSection" class="hidden">
+          <p class="field-label">Insights &amp; Data</p>
+          <div class="stat-grid" id="weightFullInsights" style="margin-bottom:8px"></div>
+        </div>
+        <div id="weightFullStatsSection">
+          <p class="field-label">Stats</p>
+          <div class="stat-grid" id="weightFullStats"></div>
+          <p class="field-label">Goals</p>
+          <div id="weightFullGoals"></div>
+        </div>
         <div style="height:24px"></div>
       </div>
     </div>
