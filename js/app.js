@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.17";
+const APP_VERSION = "2.18";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -845,10 +845,20 @@ function openCalendar() {
 $("#dayTitleBtn").addEventListener("click", openCalendar);
 $("#calClose").addEventListener("click", () => $("#calSheet").classList.add("hidden"));
 $("#calSheet").addEventListener("click", (e) => { if (e.target.id === "calSheet") $("#calSheet").classList.add("hidden"); });
-$("#calPrev").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
+$("#calPrev").addEventListener("click", () => {
+  if ($("#calPrev").disabled) return;
+  calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar();
+});
 $("#calNext").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
+// No point browsing before the user's first logged date — there's nothing there.
+function firstLoggedMonthKey() {
+  const p = state.profile;
+  return p && p.startDate ? p.startDate.slice(0, 7) : todayKey().slice(0, 7);
+}
 function renderCalendar() {
   $("#calMonthLabel").textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const calMonthKey = `${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, "0")}`;
+  $("#calPrev").disabled = calMonthKey <= firstLoggedMonthKey();
   const year = calMonth.getFullYear(), month = calMonth.getMonth();
   const monStart = (state.settings.weekStart || "mon") === "mon";
   const firstDow = new Date(year, month, 1).getDay();
@@ -901,6 +911,45 @@ function renderFasting() {
   };
   tick(); fastInterval = setInterval(tick, 30000);
 }
+function dayMealTimes(dk) {
+  const log = state.logs[dk]; if (!log) return [];
+  const times = [];
+  for (const m of MEALS) for (const it of (log.meals[m.id] || [])) if (it.ts) times.push(it.ts);
+  return times.sort((a, b) => a - b);
+}
+function fmtHm(mins) { const h = Math.floor(mins / 60), m = mins % 60; return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`; }
+function renderMealGapsChart(days = 21) {
+  const W = 340, H = 260, L = 34, R = 8, T = 12, B = 22;
+  const dayKeys = []; for (let i = days - 1; i >= 0; i--) dayKeys.push(addDays(todayKey(), -i));
+  const bw = (W - L - R) / days, gap = Math.min(4, bw * 0.15), rx = Math.min(2.5, bw / 4);
+  const Y = (hourFrac) => T + (hourFrac / 24) * (H - T - B);
+  let bars = "", gapCount = 0, gapSum = 0, longest = 0;
+  dayKeys.forEach((dk, i) => {
+    const times = dayMealTimes(dk);
+    const midnight = fromKey(dk).setHours(0, 0, 0, 0);
+    for (let j = 1; j < times.length; j++) {
+      const h1 = (times[j - 1] - midnight) / 3600000;
+      const h2 = (times[j] - midnight) / 3600000;
+      const mins = Math.round((times[j] - times[j - 1]) / 60000);
+      if (mins < 30) continue; // ignore near-simultaneous logging, not a real gap
+      gapCount++; gapSum += mins; longest = Math.max(longest, mins);
+      const t1 = new Date(times[j - 1]).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      const t2 = new Date(times[j]).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      const tip = `${fmtShort(dk)} · ${fmtHm(mins)} (${t1}–${t2})`;
+      bars += `<rect data-tip="${tip}" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(h1).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(Y(h2) - Y(h1)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="var(--purple)" opacity="${dk === todayKey() ? 1 : 0.72}"/>`;
+    }
+  });
+  const hourLines = [0, 6, 12, 18, 24].map((h) => `<line x1="${L}" y1="${Y(h).toFixed(1)}" x2="${W - R}" y2="${Y(h).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${L - 4}" y="${(Y(h) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${h}:00</text>`).join("");
+  $("#mealGapsChart").innerHTML = gapCount
+    ? `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${hourLines}${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(dayKeys[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`
+    : `<div class="food-empty">Log at least 2 meals on the same day to see gaps.</div>`;
+  $("#mealGapsStats").innerHTML = gapCount
+    ? `<div class="stat-box"><div class="v">${fmtHm(Math.round(gapSum / gapCount))}</div><div class="k">avg gap</div></div><div class="stat-box"><div class="v">${fmtHm(longest)}</div><div class="k">longest gap</div></div>`
+    : "";
+}
+$("#mealGapsBtn").addEventListener("click", () => { renderMealGapsChart(); $("#mealGapsSheet").classList.remove("hidden"); });
+$("#mealGapsClose").addEventListener("click", () => $("#mealGapsSheet").classList.add("hidden"));
+$("#mealGapsSheet").addEventListener("click", (e) => { if (e.target.id === "mealGapsSheet") $("#mealGapsSheet").classList.add("hidden"); });
 function nowTimeStr() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 function tsToTimeStr(ts) { const d = new Date(ts); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 function timeToTs(dateKey, timeStr) {
@@ -1050,7 +1099,7 @@ function renderOFFList() {
 let detail = null;
 // Pull a per-serving gram weight out of serving strings like "1 large (50 g)" or "40 g".
 function servingGrams(food) {
-  const m = /([\d.]+)\s*g\b/.exec(food.serving || "");
+  const m = /([\d.]+)\s*(g|ml)\b/i.exec(food.serving || "");
   return m ? parseFloat(m[1]) : null;
 }
 function openDetail(food, mode) {
@@ -1067,8 +1116,8 @@ function openDetail(food, mode) {
 function applyDetailUnit() {
   if (detail.mode === "per100") {
     $("#qtyInput").value = 100; $("#qtyInput").step = 10; $("#qtyUnit").textContent = "g";
-  } else if (detail.unit === "g") {
-    $("#qtyInput").value = detail.grams; $("#qtyInput").step = 5; $("#qtyUnit").textContent = "g";
+  } else if (detail.unit === "g" || detail.unit === "ml") {
+    $("#qtyInput").value = detail.grams; $("#qtyInput").step = 5; $("#qtyUnit").textContent = detail.unit;
   } else {
     $("#qtyInput").value = 1; $("#qtyInput").step = 0.5; $("#qtyUnit").textContent = "× serving";
   }
@@ -1083,7 +1132,7 @@ $("#detailUnitSeg").addEventListener("click", (e) => {
 function detailFactor() {
   const q = parseFloat($("#qtyInput").value) || 0;
   if (detail.mode === "per100") return q / 100;
-  if (detail.unit === "g" && detail.grams) return q / detail.grams;
+  if ((detail.unit === "g" || detail.unit === "ml") && detail.grams) return q / detail.grams;
   return q;
 }
 function updateMacroPreview() {
@@ -1091,7 +1140,7 @@ function updateMacroPreview() {
   $("#macroPreview").innerHTML = `<div><span>${r0(f.kcal * k)}</span><label>kcal</label></div><div class="mc-p"><span>${r1((f.p || 0) * k)}</span><label>protein</label></div><div class="mc-f"><span>${r1((f.f || 0) * k)}</span><label>fat</label></div><div class="mc-c"><span>${r1((f.c || 0) * k)}</span><label>carbs</label></div>`;
 }
 $("#qtyInput").addEventListener("input", updateMacroPreview);
-function detailStep() { return detail.mode === "per100" ? 10 : detail.unit === "g" ? 5 : 0.5; }
+function detailStep() { return detail.mode === "per100" ? 10 : (detail.unit === "g" || detail.unit === "ml") ? 5 : 0.5; }
 $("#qtyMinus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = Math.max(st, (parseFloat(i.value) || 0) - st); updateMacroPreview(); });
 $("#qtyPlus").addEventListener("click", () => { const i = $("#qtyInput"), st = detailStep(); i.value = (parseFloat(i.value) || 0) + st; updateMacroPreview(); });
 $("#detailClose").addEventListener("click", () => $("#detailSheet").classList.add("hidden"));
@@ -1099,7 +1148,7 @@ $("#detailSheet").addEventListener("click", (e) => { if (e.target.id === "detail
 $("#detailAdd").addEventListener("click", () => {
   const f = detail.food, k = detailFactor(); if (k <= 0) return;
   const qtyLabel = detail.mode === "per100" ? `${r0(k * 100)} g`
-    : detail.unit === "g" ? `${r0(parseFloat($("#qtyInput").value) || 0)} g`
+    : (detail.unit === "g" || detail.unit === "ml") ? `${r0(parseFloat($("#qtyInput").value) || 0)} ${detail.unit}`
     : (k === 1 ? (f.serving || "") : `${k} × ${f.serving || "serving"}`);
   const ts = timeToTs(viewDate, $("#detailTime").value);
   // Barcode / online results (per-100g, not yet in the library) get saved so
@@ -1946,6 +1995,46 @@ $("#weightRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightRange = +b.dataset.d; renderWeightChart(); renderWaistChart();
 });
+let weightFullRange = 180;
+function renderWeightFull() {
+  const fullMa = movingAvg(state.weights);
+  const entries = inRange(state.weights, weightFullRange), ma = inRange(fullMa, weightFullRange);
+  const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const farGoal = sortedGoals[sortedGoals.length - 1];
+  const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
+  // Full screen has the room to show every goal, not just the nearest 2.
+  const goalLines = sortedGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  $("#weightFullChart").innerHTML = entries.length >= 2
+    ? lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true, color: "var(--purple)" })
+    : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
+  $$("#weightFullRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightFullRange));
+  if (entries.length >= 2) {
+    const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
+    const trendWk = ma.length >= 2 ? r1((ma[ma.length - 1].v - ma[0].v) / (daysBetween(ma[0].d, ma[ma.length - 1].d) / 7)) : null;
+    const vals = entries.map((e) => e.kg);
+    const sinceStart = r1(entries[entries.length - 1].kg - state.profile.startWeightKg);
+    $("#weightFullStats").innerHTML = `
+      <div class="stat-box"><div class="v">${r1(avg)} kg</div><div class="k">average</div></div>
+      <div class="stat-box"><div class="v">${trendWk != null ? (trendWk <= 0 ? "" : "+") + trendWk + " kg" : "—"}</div><div class="k">trend / week</div></div>
+      <div class="stat-box"><div class="v">${sinceStart <= 0 ? "" : "+"}${sinceStart} kg</div><div class="k">since start (${r1(state.profile.startWeightKg)} kg)</div></div>
+      <div class="stat-box"><div class="v">${r1(Math.max(...vals))} kg</div><div class="k">highest</div></div>
+      <div class="stat-box"><div class="v">${r1(Math.min(...vals))} kg</div><div class="k">lowest</div></div>
+      <div class="stat-box"><div class="v">${entries.length}</div><div class="k">weigh-ins in range</div></div>`;
+  } else {
+    $("#weightFullStats").innerHTML = "";
+  }
+  const cw = currentWeight();
+  $("#weightFullGoals").innerHTML = sortedGoals.length
+    ? sortedGoals.map((g) => `<div class="targets-row"><span>${esc(g.label)} ${g.achievedOn ? "✓" : ""}</span><strong>${r1(g.targetKg)} kg${g.achievedOn ? "" : ` <span class="muted">(${r1(Math.abs(cw - g.targetKg))} kg to go)</span>`}</strong></div>`).join("")
+    : `<p class="muted">No goals set yet.</p>`;
+}
+$("#weightFullBtn").addEventListener("click", () => { renderWeightFull(); $("#weightFullSheet").classList.remove("hidden"); });
+$("#weightFullClose").addEventListener("click", () => $("#weightFullSheet").classList.add("hidden"));
+$("#weightFullSheet").addEventListener("click", (e) => { if (e.target.id === "weightFullSheet") $("#weightFullSheet").classList.add("hidden"); });
+$("#weightFullRangeChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  weightFullRange = +b.dataset.d; renderWeightFull();
+});
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
   const entries = inRange(allEntries, weightRange), ma = entries.map((e) => ({ d: e.d, v: e.kg }));
@@ -2458,8 +2547,9 @@ function renderSettings() {
   // Profile section
   $("#setDob").value = p.birthDate || "";
   $("#setSex").value = p.sex;
+  $("#setStartWeight").value = r1(p.startWeightKg);
   $("#setWeekStart").value = state.settings.weekStart || "mon";
-  $("#profileSummary").innerHTML = `<div class="targets-row"><span>Age</span><strong>${p.age}</strong></div><div class="targets-row"><span>Sex</span><strong>${p.sex === "male" ? "Male" : "Female"}</strong></div><div class="targets-row"><span>Week starts</span><strong>${(state.settings.weekStart || "mon") === "mon" ? "Monday" : "Sunday"}</strong></div>`;
+  $("#profileSummary").innerHTML = `<div class="targets-row"><span>Age</span><strong>${p.age}</strong></div><div class="targets-row"><span>Sex</span><strong>${p.sex === "male" ? "Male" : "Female"}</strong></div><div class="targets-row"><span>Initial weight</span><strong>${r1(p.startWeightKg)} kg</strong></div>`;
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
   $("#setApiKey").value = state.settings.apiKey || "";
@@ -2482,7 +2572,9 @@ function renderSettings() {
 const ACTIVITY_LABELS = { "1.2": "Sedentary", "1.375": "Lightly active", "1.55": "Active", "1.725": "Very active" };
 function renderTargetsSummary() {
   const p = state.profile;
+  const tier = PACE_TIERS.find((x) => x.id === p.paceTier);
   $("#targetsSummary").innerHTML = `
+    <div class="targets-row"><span>Chosen Pace</span><strong>${tier ? tier.name : "Custom"}</strong></div>
     <div class="targets-row"><span>Calories</span><strong>${p.kcalTarget} kcal</strong></div>
     <div class="targets-row"><span>Protein</span><strong>${p.proteinTarget} g</strong></div>
     <div class="targets-row"><span>Water</span><strong>${state.settings.waterEnabled ? p.waterTargetMl + " ml" : "off"}</strong></div>
@@ -2505,8 +2597,13 @@ $("#profileSave").addEventListener("click", () => {
   const p = state.profile, dob = $("#setDob").value;
   if (dob) { const a = ageFromDob(dob); if (a == null || a < 13 || a > 100) return toast("Enter a valid date of birth"); p.birthDate = dob; p.age = a; p.birthYear = fromKey(dob).getFullYear(); }
   p.sex = $("#setSex").value;
-  state.settings.weekStart = $("#setWeekStart").value;
+  const sw = parseFloat($("#setStartWeight").value);
+  if (sw > 0) p.startWeightKg = sw;
   save(); toggleProfileForm(false); renderSettings(); renderToday(); toast("Profile saved");
+});
+$("#setWeekStart").addEventListener("change", () => {
+  state.settings.weekStart = $("#setWeekStart").value;
+  save();
 });
 // A reusable finger-tracking segmented slider: drag the thumb (or tap a label);
 // the value follows the finger and commits on release.

@@ -158,7 +158,7 @@
 
       <!-- Since last meal -->
       <section class="card">
-        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3></div>
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3><button class="btn small" id="mealGapsBtn">History</button></div>
         <div class="fast-row">
           <span id="fastTimer" class="fast-timer">No meals logged yet</span>
         </div>
@@ -175,7 +175,7 @@
       <section id="goalCards"></section>
       <h2 class="section-label">Logging history</h2>
       <section class="card">
-        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
+        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span><button class="btn small" id="weightFullBtn">Expand</button></div>
         <div class="chips" id="weightRangeChips">
           <button data-d="7">1W</button>
           <button data-d="14">2W</button>
@@ -327,9 +327,7 @@
             <label>Sex
               <select id="setSex"><option value="male">Male</option><option value="female">Female</option></select>
             </label>
-            <label>Week starts
-              <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
-            </label>
+            <label>Initial weight (kg) <input type="number" id="setStartWeight" inputmode="decimal" step="0.1"></label>
           </div>
           <button class="btn primary full" id="profileSave">Save</button>
         </div>
@@ -430,6 +428,8 @@
           <div><div class="switch-title">Haptic feedback</div><div class="muted">Subtle taps on interactions (device only)</div></div>
           <label class="switch"><input type="checkbox" id="setHaptics"><span class="knob"></span></label>
         </div>
+        <label class="field-label" style="margin-top:10px">Week starts</label>
+        <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="info"></span>Glossary</h3></div>
@@ -537,6 +537,7 @@
       <div class="segmented hidden" id="detailUnitSeg" style="margin-top:10px">
         <button data-val="serv" class="active">Servings</button>
         <button data-val="g">Grams</button>
+        <button data-val="ml">ml</button>
       </div>
       <div class="qty-row">
         <button class="qty-btn" id="qtyMinus">−</button>
@@ -634,7 +635,7 @@
           <div class="macro-preview" id="ingTotals"></div>
         </div>
         <div class="form-grid">
-          <label id="qServingWrap" class="hidden">Serving label <input type="text" id="qServing" placeholder="e.g. 1 bowl"></label>
+          <label id="qServingWrap" class="hidden">Serving label <input type="text" id="qServing" placeholder="e.g. 1 bowl, 250 g, or 330 ml"></label>
         </div>
       </div>
       <div id="quickMealWrap" class="hidden">
@@ -777,7 +778,6 @@
           <span id="sumRangeLabel" class="range-label"></span>
           <button class="day-nav" id="sumNext"><span class="ic" data-ic="chevR"></span></button>
         </div>
-        <p class="muted center" style="margin-bottom:4px">Use ‹ › to change period</p>
         <p class="field-label">Daily calories vs target</p>
         <div id="sumCalDiff" class="chart"></div>
         <p class="legend"><span class="lg dot-ma">under target</span><span class="lg dot-goal">over target</span></p>
@@ -785,6 +785,48 @@
         <div id="sumWeightDiff" class="chart"></div>
         <p class="field-label">Totals</p>
         <div class="stat-grid" id="sumFullStats"></div>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Weight — full screen ===== -->
+  <div id="weightFullSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Weight</h2>
+        <button class="sheet-close" id="weightFullClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <div class="chips" id="weightFullRangeChips">
+          <button data-d="30">1M</button>
+          <button data-d="90">3M</button>
+          <button data-d="180" class="active">6M</button>
+          <button data-d="365">1Y</button>
+          <button data-d="9999">All</button>
+        </div>
+        <div id="weightFullChart" class="chart"></div>
+        <p class="legend purple"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
+        <p class="field-label">Stats</p>
+        <div class="stat-grid" id="weightFullStats"></div>
+        <p class="field-label">Goals</p>
+        <div id="weightFullGoals"></div>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Meal-gap history ===== -->
+  <div id="mealGapsSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Meal Gaps</h2>
+        <button class="sheet-close" id="mealGapsClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <p class="muted" style="margin-bottom:10px">Each bar is the gap between two logged meals that day, positioned by time of day — taller/higher bars mean a longer stretch without food.</p>
+        <div id="mealGapsChart" class="chart"></div>
+        <div class="stat-grid" id="mealGapsStats" style="margin-top:12px"></div>
         <div style="height:24px"></div>
       </div>
     </div>
