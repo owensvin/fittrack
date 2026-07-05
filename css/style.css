@@ -217,6 +217,7 @@ textarea { resize: none; line-height: 1.5; }
 .day-nav:disabled { opacity: 0.3; }
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 17px; margin-bottom: 13px; }
+.expandable-card { cursor: pointer; }
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
 .card-head h3 { font-size: var(--fs-md); font-weight: 600; letter-spacing: -0.1px; display: flex; align-items: center; min-width: 0; }
 .card-head h3 .ic { margin-right: 8px; }
@@ -427,9 +428,8 @@ textarea { resize: none; line-height: 1.5; }
 .slider-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: var(--r-full); }
 .slider-stop { position: absolute; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--muted2); }
 .slider-thumb { position: absolute; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.4); transition: left var(--t-fast); }
-.slider-labels { display: flex; justify-content: space-between; }
-.slider-lab { font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); flex: 1; text-align: center; cursor: pointer; }
-.slider-lab:first-child { text-align: left; } .slider-lab:last-child { text-align: right; }
+.slider-labels { position: relative; height: 16px; margin: 2px 6px 0; }
+.slider-lab { position: absolute; top: 0; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .slider-lab.active { color: var(--accent); }
 .tab.active { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .tab .ic { width: 21px; height: 21px; }

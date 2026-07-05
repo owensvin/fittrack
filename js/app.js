@@ -8,7 +8,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&
 const r0 = (n) => Math.round(n);
 const r1 = (n) => Math.round(n * 10) / 10;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const APP_VERSION = "2.18";
+const APP_VERSION = "2.19";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -918,36 +918,71 @@ function dayMealTimes(dk) {
   return times.sort((a, b) => a - b);
 }
 function fmtHm(mins) { const h = Math.floor(mins / 60), m = mins % 60; return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`; }
-function renderMealGapsChart(days = 21) {
+let mealGapsRange = 30;
+function renderMealGapsChart() {
+  const days = mealGapsRange;
   const W = 340, H = 260, L = 34, R = 8, T = 12, B = 22;
   const dayKeys = []; for (let i = days - 1; i >= 0; i--) dayKeys.push(addDays(todayKey(), -i));
+  const dayIndex = {}; dayKeys.forEach((dk, i) => (dayIndex[dk] = i));
   const bw = (W - L - R) / days, gap = Math.min(4, bw * 0.15), rx = Math.min(2.5, bw / 4);
-  const Y = (hourFrac) => T + (hourFrac / 24) * (H - T - B);
+  // 0 at the bottom, 24 at the top — values increase upward, matching every
+  // other chart in the app (rather than raw SVG top-to-bottom coordinates).
+  const Y = (hourFrac) => T + (1 - hourFrac / 24) * (H - T - B);
+  // Look one extra day back so the first shown day's overnight gap (carried
+  // over from the previous day's last meal) still gets computed correctly.
+  const fetchDays = []; for (let i = days; i >= 0; i--) fetchDays.push(addDays(todayKey(), -i));
+  const allTimes = [];
+  fetchDays.forEach((dk) => dayMealTimes(dk).forEach((ts) => allTimes.push(ts)));
+  allTimes.sort((a, b) => a - b);
   let bars = "", gapCount = 0, gapSum = 0, longest = 0;
-  dayKeys.forEach((dk, i) => {
-    const times = dayMealTimes(dk);
-    const midnight = fromKey(dk).setHours(0, 0, 0, 0);
-    for (let j = 1; j < times.length; j++) {
-      const h1 = (times[j - 1] - midnight) / 3600000;
-      const h2 = (times[j] - midnight) / 3600000;
-      const mins = Math.round((times[j] - times[j - 1]) / 60000);
-      if (mins < 30) continue; // ignore near-simultaneous logging, not a real gap
-      gapCount++; gapSum += mins; longest = Math.max(longest, mins);
-      const t1 = new Date(times[j - 1]).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-      const t2 = new Date(times[j]).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-      const tip = `${fmtShort(dk)} · ${fmtHm(mins)} (${t1}–${t2})`;
-      bars += `<rect data-tip="${tip}" x="${(L + i * bw + gap / 2).toFixed(1)}" y="${Y(h1).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(Y(h2) - Y(h1)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="var(--purple)" opacity="${dk === todayKey() ? 1 : 0.72}"/>`;
+  const BUFFER_MIN = 30; // eating takes time — don't start the "gap" until this long after
+  for (let j = 1; j < allTimes.length; j++) {
+    const prev = allTimes[j - 1], next = allTimes[j];
+    const rawMins = Math.round((next - prev) / 60000);
+    if (rawMins <= BUFFER_MIN) continue; // nothing left once the buffer is applied
+    const bufStart = prev + BUFFER_MIN * 60000;
+    const mins = rawMins - BUFFER_MIN;
+    gapCount++; gapSum += mins; longest = Math.max(longest, mins);
+    // A gap spanning midnight is split into one bar per calendar day it touches.
+    let segStart = bufStart, guard = 0;
+    while (segStart < next && guard++ < 400) {
+      const segDk = toKey(new Date(segStart));
+      const nextMidnight = fromKey(segDk); nextMidnight.setDate(nextMidnight.getDate() + 1); nextMidnight.setHours(0, 0, 0, 0);
+      const segEnd = Math.min(next, nextMidnight.getTime());
+      const idx = dayIndex[segDk];
+      if (idx !== undefined) {
+        const midnight = fromKey(segDk).setHours(0, 0, 0, 0);
+        const h1 = (segStart - midnight) / 3600000, h2 = (segEnd - midnight) / 3600000;
+        const tip = `${fmtShort(segDk)} · ${fmtTime(segStart)}–${fmtTime(segEnd)} (part of a ${fmtHm(mins)} gap)`;
+        bars += `<rect data-tip="${tip}" x="${(L + idx * bw + gap / 2).toFixed(1)}" y="${Y(h2).toFixed(1)}" width="${(bw - gap).toFixed(1)}" height="${(Y(h1) - Y(h2)).toFixed(1)}" rx="${rx.toFixed(1)}" fill="var(--blue)" opacity="${segDk === todayKey() ? 1 : 0.72}"/>`;
+      }
+      segStart = segEnd;
     }
-  });
+  }
   const hourLines = [0, 6, 12, 18, 24].map((h) => `<line x1="${L}" y1="${Y(h).toFixed(1)}" x2="${W - R}" y2="${Y(h).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${L - 4}" y="${(Y(h) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${h}:00</text>`).join("");
   $("#mealGapsChart").innerHTML = gapCount
     ? `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${hourLines}${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(dayKeys[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`
-    : `<div class="food-empty">Log at least 2 meals on the same day to see gaps.</div>`;
+    : `<div class="food-empty">Log at least 2 meals to see gaps.</div>`;
   $("#mealGapsStats").innerHTML = gapCount
     ? `<div class="stat-box"><div class="v">${fmtHm(Math.round(gapSum / gapCount))}</div><div class="k">avg gap</div></div><div class="stat-box"><div class="v">${fmtHm(longest)}</div><div class="k">longest gap</div></div>`
     : "";
+  $$("#mealGapsRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === mealGapsRange));
 }
-$("#mealGapsBtn").addEventListener("click", () => { renderMealGapsChart(); $("#mealGapsSheet").classList.remove("hidden"); });
+$("#mealGapsRangeChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  mealGapsRange = +b.dataset.d; renderMealGapsChart();
+});
+// Tap anywhere on an "expandable" card to open its full-screen view — except
+// on charts (so tap-tooltips still work) or interactive controls (inputs,
+// buttons, selects) which need their normal behaviour.
+function makeCardExpandable(sel, openFn) {
+  const el = $(sel); if (!el) return;
+  el.addEventListener("click", (e) => {
+    if (e.target.closest("button, input, select, textarea, a, .chart, svg")) return;
+    openFn();
+  });
+}
+makeCardExpandable("#mealGapsCard", () => { renderMealGapsChart(); $("#mealGapsSheet").classList.remove("hidden"); });
 $("#mealGapsClose").addEventListener("click", () => $("#mealGapsSheet").classList.add("hidden"));
 $("#mealGapsSheet").addEventListener("click", (e) => { if (e.target.id === "mealGapsSheet") $("#mealGapsSheet").classList.add("hidden"); });
 function nowTimeStr() { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
@@ -1995,19 +2030,45 @@ $("#weightRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightRange = +b.dataset.d; renderWeightChart(); renderWaistChart();
 });
-let weightFullRange = 180;
+let weightFullRange = 180, weightFullMode = "scale", weightFullGoalIds = null;
+// A quick energy-balance-style delta: how much the trend line moved over the
+// last N days, using the full (unrestricted) moving average so it's stable
+// regardless of which range chip is selected.
+function weightChangeOverDays(fullMa, days) {
+  if (fullMa.length < 2) return null;
+  const cutoff = addDays(todayKey(), -days);
+  const past = [...fullMa].reverse().find((m) => m.d <= cutoff);
+  if (!past) return null;
+  return r1(fullMa[fullMa.length - 1].v - past.v);
+}
 function renderWeightFull() {
   const fullMa = movingAvg(state.weights);
   const entries = inRange(state.weights, weightFullRange), ma = inRange(fullMa, weightFullRange);
   const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const farGoal = sortedGoals[sortedGoals.length - 1];
+  // Default to showing every goal the first time this opens.
+  if (!weightFullGoalIds) weightFullGoalIds = new Set(sortedGoals.map((g) => g.id));
+  const shownGoals = sortedGoals.filter((g) => weightFullGoalIds.has(g.id));
+  const farGoal = shownGoals[shownGoals.length - 1];
   const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
-  // Full screen has the room to show every goal, not just the nearest 2.
-  const goalLines = sortedGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  const goalLines = shownGoals.map((g) => ({ v: g.targetKg, achieved: !!g.achievedOn }));
+  // "Scale Weight" shows the raw daily readings + trend; "Trend Weight" is the
+  // smoothed line on its own, closer to what MacroFactor calls the trend view.
+  const rawLine = weightFullMode === "scale";
   $("#weightFullChart").innerHTML = entries.length >= 2
-    ? lineChart({ entries, ma, goals: goalLines, unit: "kg", projDays, rawLine: true, color: "var(--purple)" })
+    ? lineChart({ entries: rawLine ? entries : ma.map((m) => ({ d: m.d, kg: m.v })), ma, goals: goalLines, unit: "kg", projDays, rawLine, color: "var(--purple)" })
     : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
+  $("#weightFullLegend").innerHTML = rawLine
+    ? `<span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span>`
+    : `<span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span>`;
   $$("#weightFullRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === weightFullRange));
+  $$("#weightModeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === weightFullMode));
+  $("#weightFullGoalChips").innerHTML = sortedGoals.length
+    ? sortedGoals.map((g) => `<button data-id="${g.id}" class="${weightFullGoalIds.has(g.id) ? "active" : ""}">${esc(g.label)}</button>`).join("")
+    : `<p class="muted">No goals set yet.</p>`;
+  const d3 = weightChangeOverDays(fullMa, 3), d7 = weightChangeOverDays(fullMa, 7);
+  $("#weightFullInsights").innerHTML = `
+    <div class="stat-box"><div class="v ${d3 == null ? "" : d3 <= 0 ? "t-green" : "t-amber"}">${d3 == null ? "—" : (d3 <= 0 ? "" : "+") + d3 + " kg"}</div><div class="k">3-day change</div></div>
+    <div class="stat-box"><div class="v ${d7 == null ? "" : d7 <= 0 ? "t-green" : "t-amber"}">${d7 == null ? "—" : (d7 <= 0 ? "" : "+") + d7 + " kg"}</div><div class="k">7-day change</div></div>`;
   if (entries.length >= 2) {
     const avg = entries.reduce((s, e) => s + e.kg, 0) / entries.length;
     const trendWk = ma.length >= 2 ? r1((ma[ma.length - 1].v - ma[0].v) / (daysBetween(ma[0].d, ma[ma.length - 1].d) / 7)) : null;
@@ -2028,12 +2089,21 @@ function renderWeightFull() {
     ? sortedGoals.map((g) => `<div class="targets-row"><span>${esc(g.label)} ${g.achievedOn ? "✓" : ""}</span><strong>${r1(g.targetKg)} kg${g.achievedOn ? "" : ` <span class="muted">(${r1(Math.abs(cw - g.targetKg))} kg to go)</span>`}</strong></div>`).join("")
     : `<p class="muted">No goals set yet.</p>`;
 }
-$("#weightFullBtn").addEventListener("click", () => { renderWeightFull(); $("#weightFullSheet").classList.remove("hidden"); });
+makeCardExpandable("#weightCard", () => { renderWeightFull(); $("#weightFullSheet").classList.remove("hidden"); });
 $("#weightFullClose").addEventListener("click", () => $("#weightFullSheet").classList.add("hidden"));
 $("#weightFullSheet").addEventListener("click", (e) => { if (e.target.id === "weightFullSheet") $("#weightFullSheet").classList.add("hidden"); });
 $("#weightFullRangeChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   weightFullRange = +b.dataset.d; renderWeightFull();
+});
+$("#weightModeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  weightFullMode = b.dataset.val; renderWeightFull();
+});
+$("#weightFullGoalChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b || !b.dataset.id) return;
+  weightFullGoalIds.has(b.dataset.id) ? weightFullGoalIds.delete(b.dataset.id) : weightFullGoalIds.add(b.dataset.id);
+  renderWeightFull();
 });
 function renderWaistChart() {
   const allEntries = state.waists.map((w) => ({ d: w.d, kg: w.cm }));
@@ -2441,7 +2511,7 @@ function renderSleepStepsHistory() {
     ? rows.slice(0, 20).map((r) => `<li><span class="row-label">${r.dk === todayKey() ? "Today" : fmtShort(r.dk)}</span><span class="ing-right"><span class="d">${r.sleepH != null ? r.sleepH + " h sleep" : ""}${r.sleepH != null && r.steps != null ? " · " : ""}${r.steps != null ? r.steps.toLocaleString() + " steps" : ""}</span></span></li>`).join("")
     : `<li class="muted" style="border-top:none">Nothing logged yet.</li>`;
 }
-$("#sleepStepsHistBtn").addEventListener("click", () => { renderSleepStepsHistory(); $("#sleepStepsSheet").classList.remove("hidden"); });
+makeCardExpandable("#sleepStepsCard", () => { renderSleepStepsHistory(); $("#sleepStepsSheet").classList.remove("hidden"); });
 $("#sleepStepsHistClose").addEventListener("click", () => $("#sleepStepsSheet").classList.add("hidden"));
 $("#sleepStepsSheet").addEventListener("click", (e) => { if (e.target.id === "sleepStepsSheet") $("#sleepStepsSheet").classList.add("hidden"); });
 function renderCalcSheet() {
@@ -2609,13 +2679,21 @@ $("#setWeekStart").addEventListener("change", () => {
 // the value follows the finger and commits on release.
 function renderSlider(container, labels, index, onChange) {
   const n = labels.length;
+  // Labels sit at the exact same i/(n-1) fraction as the thumb/stops (not
+  // flexbox-even centers) so each label lines up with its stop on the track.
+  const fracOf = (i) => (n > 1 ? (i / (n - 1)) * 100 : 0);
+  const labelStyle = (i) => {
+    const pct = fracOf(i);
+    const tx = i === 0 ? "0%" : i === n - 1 ? "-100%" : "-50%";
+    return `left:${pct}%;transform:translateX(${tx})`;
+  };
   container.innerHTML = `
     <div class="slider-track">
       <div class="slider-fill"></div>
-      ${labels.map((_, i) => `<span class="slider-stop" style="left:${n > 1 ? (i / (n - 1)) * 100 : 0}%"></span>`).join("")}
+      ${labels.map((_, i) => `<span class="slider-stop" style="left:${fracOf(i)}%"></span>`).join("")}
       <div class="slider-thumb"></div>
     </div>
-    <div class="slider-labels">${labels.map((l, i) => `<span class="slider-lab${i === index ? " active" : ""}" data-i="${i}">${l}</span>`).join("")}</div>`;
+    <div class="slider-labels">${labels.map((l, i) => `<span class="slider-lab${i === index ? " active" : ""}" data-i="${i}" style="${labelStyle(i)}">${l}</span>`).join("")}</div>`;
   const track = container.querySelector(".slider-track");
   const thumb = container.querySelector(".slider-thumb");
   const fill = container.querySelector(".slider-fill");

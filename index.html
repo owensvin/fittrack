@@ -157,8 +157,8 @@
       </section>
 
       <!-- Since last meal -->
-      <section class="card">
-        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3><button class="btn small" id="mealGapsBtn">History</button></div>
+      <section class="card expandable-card" id="mealGapsCard">
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3></div>
         <div class="fast-row">
           <span id="fastTimer" class="fast-timer">No meals logged yet</span>
         </div>
@@ -174,8 +174,8 @@
       <h2 class="section-label">Goals</h2>
       <section id="goalCards"></section>
       <h2 class="section-label">Logging history</h2>
-      <section class="card">
-        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span><button class="btn small" id="weightFullBtn">Expand</button></div>
+      <section class="card expandable-card" id="weightCard">
+        <div class="card-head"><h3>Weight</h3><span class="muted" id="weightDelta"></span></div>
         <div class="chips" id="weightRangeChips">
           <button data-d="7">1W</button>
           <button data-d="14">2W</button>
@@ -285,8 +285,8 @@
         </div>
         <ul class="entry-list" id="waistList"></ul>
       </section>
-      <section class="card">
-        <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3><button class="btn small" id="sleepStepsHistBtn">History</button></div>
+      <section class="card expandable-card" id="sleepStepsCard">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3></div>
         <div class="dual-entry">
           <div class="de-field">
             <label class="field-label"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
@@ -798,7 +798,13 @@
         <button class="sheet-close" id="weightFullClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
-        <div class="chips" id="weightFullRangeChips">
+        <div class="segmented" id="weightModeSeg">
+          <button data-val="scale" class="active">Scale Weight</button>
+          <button data-val="trend">Trend Weight</button>
+        </div>
+        <div class="chips" id="weightFullRangeChips" style="margin-top:10px">
+          <button data-d="7">1W</button>
+          <button data-d="14">2W</button>
           <button data-d="30">1M</button>
           <button data-d="90">3M</button>
           <button data-d="180" class="active">6M</button>
@@ -806,7 +812,11 @@
           <button data-d="9999">All</button>
         </div>
         <div id="weightFullChart" class="chart"></div>
-        <p class="legend purple"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
+        <p class="legend purple" id="weightFullLegend"><span class="lg dot-raw">daily</span><span class="lg dot-ma">7-day avg</span><span class="lg dot-goal">goal</span></p>
+        <p class="field-label">Goals shown <span class="muted" style="font-weight:400">(tap to toggle)</span></p>
+        <div class="chips" id="weightFullGoalChips"></div>
+        <p class="field-label">Insights &amp; Data</p>
+        <div class="stat-grid" id="weightFullInsights" style="margin-bottom:8px"></div>
         <p class="field-label">Stats</p>
         <div class="stat-grid" id="weightFullStats"></div>
         <p class="field-label">Goals</p>
@@ -824,7 +834,14 @@
         <button class="sheet-close" id="mealGapsClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
-        <p class="muted" style="margin-bottom:10px">Each bar is the gap between two logged meals that day, positioned by time of day — taller/higher bars mean a longer stretch without food.</p>
+        <p class="muted" style="margin-bottom:10px">Each bar is a gap between logged meals (starting 30 min after the earlier one, to allow for eating time), positioned by time of day — higher bars are later in the day, and a gap spanning midnight splits across both days.</p>
+        <div class="chips" id="mealGapsRangeChips">
+          <button data-d="7">1W</button>
+          <button data-d="14">2W</button>
+          <button data-d="30" class="active">1M</button>
+          <button data-d="90">3M</button>
+          <button data-d="180">6M</button>
+        </div>
         <div id="mealGapsChart" class="chart"></div>
         <div class="stat-grid" id="mealGapsStats" style="margin-top:12px"></div>
         <div style="height:24px"></div>
