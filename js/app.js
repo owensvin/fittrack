@@ -3197,20 +3197,34 @@ $("#profileCancelBtn").addEventListener("click", () => { renderSettings(); toggl
 $("#targetsCancelBtn").addEventListener("click", () => { renderSettings(); toggleTargetsForm(false); });
 // Long-press a card's non-interactive area to toggle its edit form — doesn't
 // fire on buttons/inputs/the pace slider so it can't hijack normal taps or
-// dragging.
+// dragging. Two iOS-specific gotchas this guards against: (1) the actual
+// toggle only runs on pointerup, never inside the hold timer — swapping the
+// summary for the form *while the finger is still down* meant whatever now
+// sat under the finger (often a freshly-revealed input) ate the eventual
+// release as a tap, popping the keyboard; (2) user-select/touch-callout are
+// disabled on the card so iOS's native "select this text" long-press gesture
+// doesn't fire alongside our own and highlight text instead.
 function longPress(el, callback, ms = 550) {
   if (!el) return;
-  let timer = null, moved = false, sx = 0, sy = 0;
+  el.style.webkitUserSelect = "none";
+  el.style.userSelect = "none";
+  el.style.webkitTouchCallout = "none";
+  let timer = null, moved = false, sx = 0, sy = 0, fired = false;
   el.addEventListener("pointerdown", (e) => {
     if (e.target.closest("button, input, select, textarea, a, .slider")) return;
-    moved = false; sx = e.clientX; sy = e.clientY;
-    timer = setTimeout(() => { if (!moved) { haptic(); callback(); } }, ms);
+    moved = false; fired = false; sx = e.clientX; sy = e.clientY;
+    e.preventDefault();
+    timer = setTimeout(() => { if (!moved) { fired = true; haptic(); } }, ms);
   });
   el.addEventListener("pointermove", (e) => {
     if (Math.abs(e.clientX - sx) > 10 || Math.abs(e.clientY - sy) > 10) { moved = true; clearTimeout(timer); }
   });
-  el.addEventListener("pointerup", () => clearTimeout(timer));
-  el.addEventListener("pointercancel", () => clearTimeout(timer));
+  el.addEventListener("pointerup", () => {
+    clearTimeout(timer);
+    if (fired) callback();
+    fired = false;
+  });
+  el.addEventListener("pointercancel", () => { clearTimeout(timer); fired = false; });
 }
 longPress($("#profileCard"), () => toggleProfileForm($("#profileForm").classList.contains("hidden")));
 longPress($("#targetsCard"), () => toggleTargetsForm($("#targetsForm").classList.contains("hidden")));
