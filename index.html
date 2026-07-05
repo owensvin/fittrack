@@ -31,8 +31,8 @@
           <button data-val="male" class="active">Male</button>
           <button data-val="female">Female</button>
         </div>
-        <label class="field-label" for="obAge">Age</label>
-        <input type="number" id="obAge" inputmode="numeric" placeholder="e.g. 30" min="14" max="99">
+        <label class="field-label" for="obDob">Date of birth</label>
+        <input type="date" id="obDob">
       </section>
 
       <section class="ob-step hidden" data-step="1">
@@ -46,15 +46,14 @@
 
       <section class="ob-step hidden" data-step="2">
         <h2>Your goals</h2>
-        <p class="ob-sub">A short sprint and the bigger picture.</p>
-        <label class="field-label" for="obSprintW">Sprint target (kg)</label>
-        <input type="number" id="obSprintW" inputmode="decimal" placeholder="kg" step="0.1">
-        <label class="field-label" for="obSprintD">Sprint by</label>
-        <input type="date" id="obSprintD">
-        <label class="field-label" for="obLongW">Long-term target (kg)</label>
-        <input type="number" id="obLongW" inputmode="decimal" placeholder="kg" step="0.1">
-        <label class="field-label" for="obLongD">Long-term by</label>
-        <input type="date" id="obLongD">
+        <p class="ob-sub">Add at least one target — a short sprint, the bigger picture, or both. You can add more anytime.</p>
+        <ul id="obGoalList" class="entry-list"></ul>
+        <div class="form-grid" style="margin-top:12px">
+          <label>Label <input type="text" id="obGoalLabel" placeholder="e.g. Short-term"></label>
+          <label>Target weight (kg) <input type="number" id="obGoalTargetKg" inputmode="decimal" step="0.1"></label>
+          <label>By date <input type="date" id="obGoalDate"></label>
+        </div>
+        <button class="btn ghost full" id="obGoalAdd">Add goal</button>
       </section>
 
       <section class="ob-step hidden" data-step="3">
@@ -162,10 +161,11 @@
 
       <!-- Since last meal -->
       <section class="card expandable-card" id="mealGapsCard">
-        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Since last meal</h3></div>
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Time since last meal</h3></div>
         <div class="fast-row">
           <span id="fastTimer" class="fast-timer">No meals logged yet</span>
         </div>
+        <p class="muted" style="margin-top:6px">tap card for history</p>
       </section>
 
       <div class="bottom-space"></div>
@@ -286,6 +286,7 @@
       </section>
       <section class="card expandable-card" id="sleepStepsCard">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3></div>
+        <p class="muted" style="margin:-4px 0 10px">tap card for history</p>
         <div class="dual-entry">
           <div class="de-field">
             <label class="field-label"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
@@ -318,9 +319,10 @@
     <main id="view-settings" class="view hidden">
       <header class="page-header"><h1>Settings</h1></header>
       <section class="card">
-        <div class="card-head"><h3>Profile</h3><button class="btn small" id="profileEditBtn">Edit</button></div>
-        <div id="profileSummary" class="targets-summary"></div>
+        <div class="card-head"><h3>Your Plan</h3><button class="btn small" id="planEditBtn">Edit</button></div>
+        <div id="planSummary" class="stat-grid"></div>
         <div id="profileForm" class="hidden">
+          <p class="field-label" style="margin-top:14px">Profile</p>
           <div class="form-grid">
             <label>Date of birth <input type="date" id="setDob"></label>
             <label>Sex
@@ -328,13 +330,10 @@
             </label>
             <label>Initial weight (kg) <input type="number" id="setStartWeight" inputmode="decimal" step="0.1"></label>
           </div>
-          <button class="btn primary full" id="profileSave">Save</button>
+          <button class="btn primary full" id="profileSave">Save profile</button>
         </div>
-      </section>
-      <section class="card">
-        <div class="card-head"><h3>Targets</h3><button class="btn small" id="targetsEditBtn">Edit</button></div>
-        <div id="targetsSummary" class="targets-summary"></div>
         <div id="targetsForm" class="hidden">
+          <p class="field-label" style="margin-top:14px">Targets</p>
           <label class="field-label">Pace <button class="info-btn" data-info="deficit"><span class="ic" data-ic="info"></span></button></label>
           <div class="slider" id="paceTiers"></div>
           <p class="muted" id="paceNote" style="margin:8px 0 14px"></p>
@@ -364,7 +363,7 @@
             <div><div class="switch-title">Track water</div><div class="muted">Shows the water card on Today</div></div>
             <label class="switch"><input type="checkbox" id="setWaterEnabled"><span class="knob"></span></label>
           </div>
-          <button class="btn primary full" id="settingsSave">Save</button>
+          <button class="btn primary full" id="settingsSave">Save targets</button>
         </div>
         <p class="muted center" id="settingsInfo"></p>
       </section>
@@ -463,6 +462,7 @@
             <p class="muted" style="margin-top:6px">Designed &amp; built by owensvin · Crafted with Claude Code</p>
           </div>
         </div>
+        <button class="btn ghost full" id="whatsNewOpenBtn" style="margin-top:12px">What's New</button>
       </section>
       <section class="card">
         <div class="card-head"><h3>Data</h3></div>

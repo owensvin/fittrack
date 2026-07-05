@@ -129,6 +129,7 @@ const ICONS = {
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor"/>',
   heart: '<path d="M12 20s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 5c-2.5 4.6-9.5 9-9.5 9z"/>',
+  grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
 };
 function renderIcons(root = document) {
   $$("[data-ic]", root).forEach((el) => {
@@ -142,10 +143,10 @@ function renderIcons(root = document) {
 
 /* ---------- data tables ---------- */
 const MEALS = [
-  { id: "breakfast", label: "Breakfast", ic: "sunrise", color: "var(--amber)" },
-  { id: "lunch", label: "Lunch", ic: "sun", color: "var(--accent)" },
-  { id: "dinner", label: "Dinner", ic: "moon", color: "var(--purple)" },
-  { id: "snacks", label: "Snacks", ic: "bowl", color: "var(--blue)" },
+  { id: "breakfast", label: "Breakfast", ic: "sunrise" },
+  { id: "lunch", label: "Lunch", ic: "sun" },
+  { id: "dinner", label: "Dinner", ic: "moon" },
+  { id: "snacks", label: "Snacks", ic: "bowl" },
 ];
 const EXERCISES = [
   { id: "walk", name: "Brisk walk", ic: "walk", met: 4.3 },
@@ -427,18 +428,23 @@ function weightTrendPerDay() {
 }
 
 /* ---------- onboarding ---------- */
-const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750, supplements: [] };
+const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750, supplements: [], goals: [] };
 function showOnboarding() {
   $("#onboarding").classList.remove("hidden");
-  const sprint = new Date(); sprint.setDate(sprint.getDate() + 14);
-  const long = new Date(); long.setMonth(long.getMonth() + 6);
-  $("#obSprintD").value = toKey(sprint);
-  $("#obLongD").value = toKey(long);
   $("#obSex").addEventListener("click", (e) => segPick(e, "#obSex", (v) => (ob.sex = v)));
   $("#obActivity").addEventListener("click", (e) => segPick(e, "#obActivity", (v) => (ob.activity = parseFloat(v))));
   $("#obPace").addEventListener("click", (e) => segPick(e, "#obPace", (v) => { ob.deficit = parseInt(v, 10); obSummary(); }));
   $("#obNext").addEventListener("click", obNext);
   $("#obBack").addEventListener("click", () => obGo(ob.step - 1));
+  $("#obGoalAdd").addEventListener("click", () => {
+    const label = $("#obGoalLabel").value.trim() || "Goal";
+    const targetKg = parseFloat($("#obGoalTargetKg").value);
+    const date = $("#obGoalDate").value;
+    if (!targetKg || !date) return toast("Enter a target weight and date");
+    ob.goals.push({ id: "g" + Date.now() + ob.goals.length, label, targetKg, date, created: todayKey() });
+    $("#obGoalLabel").value = ""; $("#obGoalTargetKg").value = ""; $("#obGoalDate").value = "";
+    renderObGoals();
+  });
   $("#obSuppAdd").addEventListener("click", () => {
     const name = $("#obSuppName").value.trim();
     if (!name) return toast("Enter a name");
@@ -446,6 +452,17 @@ function showOnboarding() {
     $("#obSuppName").value = ""; $("#obSuppNote").value = "";
     renderObSupps();
   });
+}
+function renderObGoals() {
+  $("#obGoalList").innerHTML = ob.goals.length
+    ? ob.goals.map((g) => `<li data-id="${g.id}"><span class="row-label"><span class="ic" data-ic="target"></span>${esc(g.label)} — ${r1(g.targetKg)}kg by ${fmtShort(g.date)}</span>
+       <button class="fi-del" data-id="${g.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+    : `<li class="muted" style="border-top:none">Add at least one goal below.</li>`;
+  renderIcons($("#obGoalList"));
+  $$("#obGoalList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    ob.goals = ob.goals.filter((g) => g.id !== b.dataset.id);
+    renderObGoals();
+  }));
 }
 function renderObSupps() {
   $("#obSuppList").innerHTML = ob.supplements.length
@@ -464,31 +481,38 @@ function segPick(e, sel, cb) {
   $$(sel + " button").forEach((x) => x.classList.toggle("active", x === b));
   cb(b.dataset.val);
 }
+function obAge() { return ageFromDob($("#obDob").value); }
 function obNext() {
-  if (ob.step === 0 && !(parseInt($("#obAge").value, 10) >= 14)) return toast("Enter your age");
+  if (ob.step === 0 && !(obAge() >= 14)) return toast("Enter a valid date of birth");
   if (ob.step === 1) {
     if (!parseFloat($("#obHeight").value) || !parseFloat($("#obWeight").value)) return toast("Enter height and weight");
   }
-  if (ob.step === 2) {
-    if (!parseFloat($("#obSprintW").value) || !parseFloat($("#obLongW").value)) return toast("Enter your goals");
-  }
+  if (ob.step === 2 && !ob.goals.length) return toast("Add at least one goal");
   if (ob.step === 4) return obFinish();
   obGo(ob.step + 1);
 }
 function obGo(n) {
+  const prevStep = ob.step;
   ob.step = clamp(n, 0, 4);
   $$(".ob-step").forEach((s) => s.classList.toggle("hidden", +s.dataset.step !== ob.step));
   $("#obBack").classList.toggle("hidden", ob.step === 0);
   $("#obNext").textContent = ob.step === 4 ? "Start" : "Continue";
   $("#obBar").style.width = (ob.step + 1) * 20 + "%";
+  // Same fade/slide-up animation the tab views use, reused here for step
+  // changes — void offsetWidth forces a reflow so re-adding the class
+  // restarts the animation even when moving between steps rapidly.
+  if (!prefersReducedMotion() && prevStep !== ob.step) {
+    const el = $(`.ob-step[data-step="${ob.step}"]`);
+    el.classList.remove("view-anim"); void el.offsetWidth; el.classList.add("view-anim");
+  }
   if (ob.step === 3) {
-    const t = r0(bmr(ob.sex, parseFloat($("#obWeight").value), parseFloat($("#obHeight").value), parseInt($("#obAge").value, 10)) * ob.activity);
+    const t = r0(bmr(ob.sex, parseFloat($("#obWeight").value), parseFloat($("#obHeight").value), obAge()) * ob.activity);
     $("#obTdee").textContent = t;
     obSummary();
   }
 }
 function obSummary() {
-  const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), age = parseInt($("#obAge").value, 10);
+  const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), age = obAge();
   const t = r0(bmr(ob.sex, w, h, age) * ob.activity);
   let target = t - ob.deficit, floorNote = "";
   const floor = kcalFloor(ob.sex);
@@ -510,34 +534,36 @@ const WHATS_NEW = {
     "The \"Weekly review ready\" badge now actually opens your week's summary.",
   ],
 };
+function showWhatsNewSheet(version) {
+  const entry = WHATS_NEW[version];
+  if (!entry) return toast("No changelog for this version");
+  $("#whatsNewTitle").textContent = `What's new in v${version}`;
+  $("#whatsNewList").innerHTML = entry.map((x) => `<li>${esc(x)}</li>`).join("");
+  $("#whatsNewSheet").classList.remove("hidden");
+}
 function maybeShowWhatsNew() {
-  const entry = WHATS_NEW[APP_VERSION];
   if (state.settings.lastSeenVersion !== APP_VERSION) {
     state.settings.lastSeenVersion = APP_VERSION; save();
-    if (entry) {
-      $("#whatsNewTitle").textContent = `What's new in v${APP_VERSION}`;
-      $("#whatsNewList").innerHTML = entry.map((x) => `<li>${esc(x)}</li>`).join("");
-      $("#whatsNewSheet").classList.remove("hidden");
-    }
+    showWhatsNewSheet(APP_VERSION);
   }
 }
 wireSheetClose("whatsNewSheet", "whatsNewClose");
+// Manual reopen from Settings → About — the auto-popup only ever fires once
+// per version bump, this lets the user revisit it anytime after that.
+$("#whatsNewOpenBtn").addEventListener("click", () => showWhatsNewSheet(APP_VERSION));
 $("#whatsNewGotIt").addEventListener("click", () => $("#whatsNewSheet").classList.add("hidden"));
 
 function obFinish() {
-  const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), age = parseInt($("#obAge").value, 10);
+  const w = parseFloat($("#obWeight").value), h = parseFloat($("#obHeight").value), dob = $("#obDob").value, age = ageFromDob(dob);
   const t = r0(bmr(ob.sex, w, h, age) * ob.activity);
   state.profile = {
-    sex: ob.sex, age, birthYear: new Date().getFullYear() - age, heightCm: h, startWeightKg: w, startDate: todayKey(), activity: ob.activity,
+    sex: ob.sex, age, birthDate: dob, heightCm: h, startWeightKg: w, startDate: todayKey(), activity: ob.activity,
     kcalTarget: Math.max(t - ob.deficit, kcalFloor(ob.sex)),
     proteinTarget: r0(w * 1.6), waterTargetMl: 2500, moveTarget: 200, eatBack: false,
     targetDeficit: ob.deficit, autoAdjust: false,
   };
   state.profile.kcalTargetHistory = [{ from: todayKey(), kcal: state.profile.kcalTarget }];
-  state.goals = [
-    { id: "g" + Date.now(), label: "Short-term", targetKg: parseFloat($("#obSprintW").value), date: $("#obSprintD").value, created: todayKey() },
-    { id: "g" + (Date.now() + 1), label: "Long-term", targetKg: parseFloat($("#obLongW").value), date: $("#obLongD").value, created: todayKey() },
-  ];
+  state.goals = ob.goals;
   state.weights.push({ d: todayKey(), ts: new Date().toISOString(), kg: w });
   if (ob.supplements.length) state.supplements = ob.supplements;
   state.settings.lastSeenVersion = APP_VERSION; // brand-new install — skip the What's New popup
@@ -866,27 +892,29 @@ function renderSuggestRow() {
     }));
 }
 
-const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.id, m.label]));
-const MEAL_COLOR = Object.fromEntries(MEALS.map((m) => [m.id, m.color]));
 function renderMeals(k) {
   const log = dayLog(k);
-  // One merged, time-sorted list across all meal buckets — items still carry
-  // data-meal/data-i pointing at their real bucket+index, so edit/delete
-  // (which key into log.meals[mealId][i]) work unchanged underneath.
-  const flat = [];
-  for (const mm of MEALS) (log.meals[mm.id] || []).forEach((it, i) => flat.push({ mealId: mm.id, i, it }));
-  flat.sort((a, b) => (a.it.ts || 0) - (b.it.ts || 0));
-  const totalKcal = flat.reduce((s, x) => s + x.it.kcal, 0);
+  // Grouped by meal type with a subheader per group (only groups that have
+  // items render at all) — items still carry data-meal/data-i pointing at
+  // their real bucket+index, so edit/delete (which key into
+  // log.meals[mealId][i]) work unchanged underneath.
+  const groups = MEALS.map((mm) => ({
+    mm,
+    items: (log.meals[mm.id] || []).map((it, i) => ({ i, it })).sort((a, b) => (a.it.ts || 0) - (b.it.ts || 0)),
+  })).filter((g) => g.items.length);
+  const totalKcal = groups.reduce((s, g) => s + g.items.reduce((s2, x) => s2 + x.it.kcal, 0), 0);
   $("#mealList").innerHTML = `<section class="card meal-card">
     <div class="meal-head">
       <h3><span class="ic meal-ic" data-ic="bowl"></span>Meals</h3>
-      <span class="meal-kcal">${flat.length ? r0(totalKcal) + " kcal" : ""}</span>
+      <span class="meal-kcal">${groups.length ? r0(totalKcal) + " kcal" : ""}</span>
       <button class="add-btn" id="mealAddBtn"><span class="ic" data-ic="plus"></span></button>
     </div>
-    ${flat.length ? `<ul class="meal-items">` + flat.map(({ mealId, i, it }) =>
-      `<li data-meal="${mealId}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${it.ts ? fmtTime(it.ts) + " · " : ""}<span class="meal-tag-dot" style="background:${MEAL_COLOR[mealId]}"></span>${MEAL_LABEL[mealId]}${it.qtyLabel ? " · " + esc(it.qtyLabel) : ""}</span></span>
-       <span class="fi-kcal">${r0(it.kcal)}</span>
-       <button class="fi-del" data-meal="${mealId}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("") + `</ul>`
+    ${groups.length ? groups.map((g) => `
+      <h4 class="meal-subheader">${g.mm.label}</h4>
+      <ul class="meal-items">${g.items.map(({ i, it }) =>
+        `<li data-meal="${g.mm.id}" data-i="${i}"><span class="fi-name">${esc(it.name)} <span class="fi-qty">${it.ts ? fmtTime(it.ts) : ""}${it.qtyLabel ? " · " + esc(it.qtyLabel) : ""}</span></span>
+         <span class="fi-kcal">${r0(it.kcal)}</span>
+         <button class="fi-del" data-meal="${g.mm.id}" data-i="${i}"><span class="ic" data-ic="x"></span></button></li>`).join("")}</ul>`).join("")
       : `<p class="muted" style="margin-top:8px">Nothing logged yet — tap + to add.</p>`}
   </section>`;
   renderIcons($("#mealList"));
@@ -2669,6 +2697,70 @@ document.addEventListener("pointerdown", (e) => {
   if (_openSwipe && !_openSwipe.contains(e.target)) closeSwipe(_openSwipe);
 }, true);
 
+// Auto-scrolls text that overflows its wrapper (bounces to reveal the end,
+// then back) instead of just clipping it with an ellipsis.
+function applyMarquee(el) {
+  requestAnimationFrame(() => {
+    const over = el.scrollWidth - el.parentElement.clientWidth;
+    if (over > 4) {
+      el.style.setProperty("--marquee-shift", `-${over}px`);
+      el.style.setProperty("--marquee-dur", `${Math.max(3, over / 20)}s`);
+      el.classList.add("marquee-active");
+    } else {
+      el.classList.remove("marquee-active");
+    }
+  });
+}
+
+// Drag-and-drop vertical reordering via a dedicated [data-drag] handle,
+// deliberately kept separate from swipe-to-delete — both start from a
+// pointerdown on the row and would otherwise fight over the same gesture,
+// so a reorderable list should not also call makeSwipeable. Swaps the
+// dragged row with whichever neighbor its pointer crosses the midpoint of,
+// mutating `arr` in place to match, then calls onReorder() (typically
+// save()+re-render) once the drag ends.
+function makeReorderable(containerSel, arr, onReorder) {
+  const container = $(containerSel);
+  if (!container) return;
+  let dragLi = null, startY = 0;
+  container.querySelectorAll("li[data-id]").forEach((li) => {
+    const handle = li.querySelector("[data-drag]");
+    if (!handle) return;
+    const idxOf = () => arr.findIndex((x) => x.id === li.dataset.id);
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      dragLi = li; startY = e.clientY;
+      li.classList.add("dragging");
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    handle.addEventListener("pointermove", (e) => {
+      if (dragLi !== li) return;
+      li.style.transform = `translateY(${e.clientY - startY}px)`;
+      const rect = li.getBoundingClientRect(), centerY = rect.top + rect.height / 2;
+      const prev = li.previousElementSibling, next = li.nextElementSibling;
+      if (prev && prev.dataset.id && centerY < prev.getBoundingClientRect().top + prev.getBoundingClientRect().height / 2) {
+        container.insertBefore(li, prev);
+        const i = idxOf();
+        [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+        startY = e.clientY; li.style.transform = "translateY(0px)";
+      } else if (next && next.dataset.id && centerY > next.getBoundingClientRect().top + next.getBoundingClientRect().height / 2) {
+        container.insertBefore(next, li);
+        const i = idxOf();
+        [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+        startY = e.clientY; li.style.transform = "translateY(0px)";
+      }
+    });
+    const end = () => {
+      if (dragLi !== li) return;
+      li.style.transform = ""; li.classList.remove("dragging");
+      dragLi = null;
+      onReorder();
+    };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+}
+
 // Global light haptic tick on interactive taps — a subtle native feel (no-ops
 // in the browser). Buttons cover chips, tabs, food rows, add/qty/swipe actions.
 document.addEventListener("pointerdown", (e) => {
@@ -3010,7 +3102,6 @@ function renderSettings() {
   $("#setSex").value = p.sex;
   $("#setStartWeight").value = r1(p.startWeightKg);
   $("#setWeekStart").value = state.settings.weekStart || "mon";
-  $("#profileSummary").innerHTML = `<div class="targets-row"><span>Age</span><strong>${p.age}</strong></div><div class="targets-row"><span>Sex</span><strong>${p.sex === "male" ? "Male" : "Female"}</strong></div><div class="targets-row"><span>Initial weight</span><strong>${r1(p.startWeightKg)} kg</strong></div>`;
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
   $("#setApiKey").value = state.settings.apiKey || "";
@@ -3032,29 +3123,35 @@ function renderSettings() {
   renderGlossary();
 }
 const ACTIVITY_LABELS = { "1.2": "Sedentary", "1.375": "Lightly active", "1.55": "Active", "1.725": "Very active" };
+// Profile + Targets merged into one "Your Plan" card — a single icon-row
+// stat grid (matching the app's existing .stat-box look) instead of two
+// separate plain label/value lists, with one Edit toggle revealing both
+// (still distinct) forms underneath since their save logic stays separate.
 function renderTargetsSummary() {
   const p = state.profile;
   const tier = PACE_TIERS.find((x) => x.id === p.paceTier);
-  $("#targetsSummary").innerHTML = `
-    <div class="targets-row"><span>Chosen Pace</span><strong>${tier ? tier.name : "Custom"}</strong></div>
-    <div class="targets-row"><span>Calories</span><strong>${p.kcalTarget} kcal</strong></div>
-    <div class="targets-row"><span>Protein</span><strong>${p.proteinTarget} g</strong></div>
-    <div class="targets-row"><span>Water</span><strong>${state.settings.waterEnabled ? p.waterTargetMl + " ml" : "off"}</strong></div>
-    <div class="targets-row"><span>Active-calorie goal</span><strong>${p.moveTarget} kcal</strong></div>
-    <div class="targets-row"><span>Activity</span><strong>${ACTIVITY_LABELS[String(p.activity)] || p.activity}</strong></div>`;
+  const rows = [
+    { ic: "person", c: "t-blue", v: `${p.age} · ${p.sex === "male" ? "Male" : "Female"}`, k: "Age & sex" },
+    { ic: "scale", c: "t-purple", v: `${r1(p.startWeightKg)} kg`, k: "Initial weight" },
+    { ic: "flame", c: "t-amber", v: `${p.kcalTarget} kcal`, k: "Calories" },
+    { ic: "dumbbell", c: "t-green", v: `${p.proteinTarget} g`, k: "Protein" },
+    { ic: "drop", c: "t-blue", v: state.settings.waterEnabled ? `${p.waterTargetMl} ml` : "Off", k: "Water" },
+    { ic: "pulse", c: "t-green", v: `${p.moveTarget} kcal`, k: "Active-calorie goal" },
+    { ic: "run", c: "t-purple", v: ACTIVITY_LABELS[String(p.activity)] || p.activity, k: "Activity" },
+    { ic: "target", c: "t-amber", v: tier ? tier.name : "Custom", k: "Pace" },
+  ];
+  $("#planSummary").innerHTML = rows.map((r) => `<div class="stat-box"><span class="ic ${r.c}" data-ic="${r.ic}"></span><div class="v">${r.v}</div><div class="k">${r.k}</div></div>`).join("");
+  renderIcons($("#planSummary"));
 }
-function toggleTargetsForm(show) {
-  $("#targetsForm").classList.toggle("hidden", !show);
-  $("#targetsSummary").classList.toggle("hidden", show);
-  $("#targetsEditBtn").textContent = show ? "Cancel" : "Edit";
-}
-$("#targetsEditBtn").addEventListener("click", () => toggleTargetsForm($("#targetsForm").classList.contains("hidden")));
-function toggleProfileForm(show) {
+function togglePlanForm(show) {
   $("#profileForm").classList.toggle("hidden", !show);
-  $("#profileSummary").classList.toggle("hidden", show);
-  $("#profileEditBtn").textContent = show ? "Cancel" : "Edit";
+  $("#targetsForm").classList.toggle("hidden", !show);
+  $("#planSummary").classList.toggle("hidden", show);
+  $("#planEditBtn").textContent = show ? "Cancel" : "Edit";
 }
-$("#profileEditBtn").addEventListener("click", () => toggleProfileForm($("#profileForm").classList.contains("hidden")));
+function toggleTargetsForm(show) { togglePlanForm(show); }
+function toggleProfileForm(show) { togglePlanForm(show); }
+$("#planEditBtn").addEventListener("click", () => togglePlanForm($("#profileForm").classList.contains("hidden")));
 $("#profileSave").addEventListener("click", () => {
   const p = state.profile, dob = $("#setDob").value;
   if (dob) { const a = ageFromDob(dob); if (a == null || a < 13 || a > 100) return toast("Enter a valid date of birth"); p.birthDate = dob; p.age = a; p.birthYear = fromKey(dob).getFullYear(); }
@@ -3257,28 +3354,59 @@ $("#setReminderTime").addEventListener("change", () => {
   state.settings.reminder.time = $("#setReminderTime").value;
   save(); if (state.settings.reminder.enabled) applyReminder();
 });
+let editingSuppId = null;
+function resetSuppForm() {
+  editingSuppId = null;
+  $("#suppName").value = ""; $("#suppNote").value = "";
+  $("#suppAddBtn").textContent = "Save supplement";
+}
+// Rows are tap-to-edit (opens the same form pre-filled), have a drag handle
+// for reordering, and their name+note marquee-scrolls if it overflows —
+// deliberately not swipe-to-delete here (the drag handle already claims the
+// pointer-drag gesture on this list; the explicit ✕ button is the only
+// delete affordance).
 function renderSuppSettings() {
   $("#suppSettingsList").innerHTML = state.supplements.length
     ? state.supplements.map((s) =>
-        `<li><span class="row-label">${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span>
-         <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button></li>`).join("")
+        `<li data-id="${s.id}">
+          <span class="drag-handle" data-drag><span class="ic" data-ic="grip"></span></span>
+          <span class="row-label marquee-wrap"><span class="marquee-text">${esc(s.name)}${s.note ? " — " + esc(s.note) : ""}</span></span>
+          <button class="fi-del" data-id="${s.id}"><span class="ic" data-ic="x"></span></button>
+        </li>`).join("")
     : `<li class="muted" style="border-top:none">No supplements yet — add one below.</li>`;
   renderIcons($("#suppSettingsList"));
-  $$("#suppSettingsList .fi-del").forEach((b) => b.addEventListener("click", () => {
+  $$("#suppSettingsList li[data-id]").forEach((li) => li.addEventListener("click", (e) => {
+    if (e.target.closest(".fi-del, .drag-handle")) return;
+    const s = state.supplements.find((x) => x.id === li.dataset.id); if (!s) return;
+    editingSuppId = s.id;
+    $("#suppName").value = s.name; $("#suppNote").value = s.note || "";
+    $("#suppAddBtn").textContent = "Save changes";
+    toggleSuppForm(true);
+  }));
+  $$("#suppSettingsList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
     state.supplements = state.supplements.filter((s) => s.id !== b.dataset.id);
+    if (editingSuppId === b.dataset.id) resetSuppForm();
     save(); renderSuppSettings();
   }));
-  makeSwipeable($("#suppSettingsList"));
+  makeReorderable("#suppSettingsList", state.supplements, () => { save(); renderSuppSettings(); });
+  $$("#suppSettingsList .marquee-text").forEach(applyMarquee);
 }
-function toggleSuppForm(show) { $("#suppForm").classList.toggle("hidden", !show); }
-$("#suppNewBtn").addEventListener("click", () => toggleSuppForm(true));
-$("#suppCancelBtn").addEventListener("click", () => { $("#suppName").value = ""; $("#suppNote").value = ""; toggleSuppForm(false); });
+function toggleSuppForm(show) { $("#suppForm").classList.toggle("hidden", !show); if (!show) resetSuppForm(); }
+$("#suppNewBtn").addEventListener("click", () => { resetSuppForm(); toggleSuppForm(true); });
+$("#suppCancelBtn").addEventListener("click", () => toggleSuppForm(false));
 $("#suppAddBtn").addEventListener("click", () => {
   const name = $("#suppName").value.trim();
   if (!name) return toast("Enter a name");
-  state.supplements.push({ id: "s" + Date.now(), name, note: $("#suppNote").value.trim() });
-  $("#suppName").value = ""; $("#suppNote").value = "";
-  save(); toggleSuppForm(false); renderSuppSettings(); toast("Supplement added");
+  const note = $("#suppNote").value.trim();
+  if (editingSuppId) {
+    const s = state.supplements.find((x) => x.id === editingSuppId);
+    if (s) { s.name = name; s.note = note; }
+    save(); toggleSuppForm(false); renderSuppSettings(); toast("Supplement updated");
+  } else {
+    state.supplements.push({ id: "s" + Date.now(), name, note });
+    save(); toggleSuppForm(false); renderSuppSettings(); toast("Supplement added");
+  }
 });
 $("#settingsSave").addEventListener("click", () => {
   const p = state.profile;

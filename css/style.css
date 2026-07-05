@@ -280,7 +280,8 @@ textarea { resize: none; line-height: 1.5; }
 .meal-head { display: flex; align-items: center; }
 .meal-head h3 { font-size: var(--fs-base); font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .meal-ic { color: var(--amber); }
-.meal-tag-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.meal-subheader { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 4px; }
+.meal-subheader:first-of-type { margin-top: 10px; }
 
 .shimmer-line {
   display: block; height: 13px; width: 75%; border-radius: 4px;
@@ -292,6 +293,23 @@ textarea { resize: none; line-height: 1.5; }
 
 @keyframes ringPulse { 0% { transform: scale(1); } 35% { transform: scale(1.06); } 100% { transform: scale(1); } }
 .ring-pulse { animation: ringPulse 0.5s var(--ease); transform-origin: 95px 95px; }
+
+/* Drag-to-reorder handle (supplements) — deliberately separate from
+   swipe-to-delete gestures, which fight over the same pointer drag. */
+.drag-handle { display: flex; align-items: center; justify-content: center; width: 26px; flex-shrink: 0; color: var(--muted); cursor: grab; touch-action: none; }
+.drag-handle .ic { width: 16px; height: 16px; }
+li.dragging { position: relative; z-index: 5; background: var(--card2); box-shadow: 0 4px 14px rgba(0,0,0,.3); border-radius: var(--r-sm); }
+
+/* Auto-scrolling text for names that overflow their row (bounces to reveal
+   the end, then back) instead of just clipping with an ellipsis. */
+.marquee-wrap { overflow: hidden; min-width: 0; flex: 1; }
+.marquee-text { display: inline-block; white-space: nowrap; }
+.marquee-text.marquee-active { animation: marqueeBounce var(--marquee-dur, 5s) ease-in-out infinite; }
+@keyframes marqueeBounce {
+  0%, 15% { transform: translateX(0); }
+  45%, 60% { transform: translateX(var(--marquee-shift, 0)); }
+  100% { transform: translateX(0); }
+}
 .meal-kcal { color: var(--muted); font-size: var(--fs-sm); margin-left: auto; margin-right: 12px; font-variant-numeric: tabular-nums; }
 .meal-items { list-style: none; }
 .meal-items li { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--border); font-size: var(--fs-base); cursor: pointer; }
@@ -377,6 +395,7 @@ textarea { resize: none; line-height: 1.5; }
 .stat-box .v { font-size: var(--fs-lg); font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-box .k { font-size: var(--fs-2xs); color: var(--muted); margin-top: 2px; }
 .stat-box .k .info-btn { vertical-align: middle; margin-left: 2px; }
+.stat-box > .ic { width: 15px; height: 15px; margin-bottom: 5px; }
 .stat-sub { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); margin-left: 6px; }
 
 /* ===== Body page ===== */
