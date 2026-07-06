@@ -1,6 +1,6 @@
 {
   "name": "fittrack",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "Personal calorie, weight and habit tracker (PWA + Capacitor iOS)",
   "scripts": {
@@ -14,9 +14,11 @@
   },
   "dependencies": {
     "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.4",
     "@capacitor/haptics": "^6.0.2",
     "@capacitor/ios": "^6.2.0",
     "@capacitor/local-notifications": "^6.1.0",
+    "@capacitor/share": "^6.0.4",
     "fittrack-foundation-llm": "file:plugins/foundation-llm",
     "fittrack-healthkit": "file:plugins/healthkit",
     "html5-qrcode": "^2.3.8"

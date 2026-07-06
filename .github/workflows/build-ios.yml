@@ -104,6 +104,22 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      # xcodebuild ran with CODE_SIGNING_ALLOWED=NO, so nothing ever actually
+      # codesigned the binary — the entitlements written into App.entitlements
+      # above were sitting in the project but never embedded anywhere. SideStore
+      # determines which capabilities to request from Apple by reading the
+      # entitlements already present in the app it's re-signing, so an app with
+      # zero embedded entitlements gets zero capabilities, no matter what's in
+      # the (unused) entitlements file. Ad-hoc signing (identity "-", no
+      # certificate needed) embeds the real entitlements so SideStore's re-sign
+      # step has something to read and request a matching profile for.
+      - name: Ad-hoc sign so SideStore can detect requested entitlements
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
+          codesign --force --deep --sign - --entitlements ios/App/App/App.entitlements "$APP"
+          echo "--- embedded entitlements ---"
+          codesign -d --entitlements :- "$APP"
+
       - name: Package into .ipa
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)

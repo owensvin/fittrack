@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.1";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -545,6 +545,12 @@ const WHATS_NEW = {
     "Supplements and Goals: swipe left for Edit/Delete, drag to reorder supplements, long names auto-scroll.",
     "Settings: Profile and Targets redesigned with icon stat cards (long-press either to edit); a \"What's New\" button so you can always come back to this list.",
     "New app icon.",
+  ],
+  "3.1": [
+    "Fixed Apple Health not showing up at all in iOS Settings — the app now actually requests the HealthKit permission properly, so it can be granted.",
+    "Fixed \"Export backup\" not producing a file you could find — it now hands off to the Share sheet so you can actually save it to Files, AirDrop it, etc.",
+    "Fixed long-pressing Profile or Targets to edit sometimes selecting text and popping the keyboard open.",
+    "Fixed the What's New list running off the bottom of the screen on longer updates — it scrolls now.",
   ],
 };
 function showWhatsNewSheet(version) {
@@ -3561,9 +3567,29 @@ $("#setHaptics").addEventListener("change", () => {
   save(); haptic();
 });
 
-$("#exportBtn").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `fittrack-backup-${todayKey()}.json`; a.click(); URL.revokeObjectURL(a.href);
+// A plain <a download> click is a no-op in the native WKWebView shell — there's
+// no browser download manager for it to hand off to, so the toast fired but
+// nothing ever reached the Files app. Native path writes the JSON to a temp
+// file via Filesystem then hands it to the OS share sheet (Share.share),
+// where "Save to Files" actually persists it; web/PWA keeps the old
+// blob-download since that genuinely works in a real browser tab.
+$("#exportBtn").addEventListener("click", async () => {
+  const filename = `fittrack-backup-${todayKey()}.json`;
+  const json = JSON.stringify(state, null, 2);
+  if (isNativeApp() && window.capacitorFilesystem && window.capacitorShare) {
+    try {
+      const { Filesystem, Directory, Encoding } = window.capacitorFilesystem;
+      const { Share } = window.capacitorShare;
+      const { uri } = await Filesystem.writeFile({ path: filename, data: json, directory: Directory.Cache, encoding: Encoding.UTF8 });
+      await Share.share({ title: "FitTrack Backup", url: uri });
+      toast("Backup exported (photos not included)");
+    } catch (e) {
+      toast("Export failed: " + (e.message || "error"));
+    }
+    return;
+  }
+  const blob = new Blob([json], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
   toast("Backup exported (photos not included)");
 });
 $("#importInput").addEventListener("change", async (e) => {
