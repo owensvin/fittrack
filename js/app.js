@@ -2622,30 +2622,20 @@ function goalCard(g) {
   const windowDays = Math.max(1, daysBetween(g.created || p.startDate, date));
   const elapsedFrac = clamp(daysBetween(g.created || p.startDate, todayKey()) / windowDays, 0, 1);
   const nearDeadline = daysLeft <= 14;
-  // Ahead/behind/on-track is driven by comparing pct (actual progress, the
-  // green bar) against elapsedFrac (expected progress on a straight-line
-  // pace, the grey bar) — the SAME two numbers the bars themselves show, so
-  // the status text can never contradict what the bar lengths say. The
-  // trend-based projected weight/date is kept as extra detail underneath,
-  // not as the thing that decides ahead/behind.
-  let dot = "", pace = "";
-  if (cw <= tgt) { dot = "g"; pace = "Reached!"; }
-  else {
-    const gap = pct - elapsedFrac;
-    if (gap >= 0.03) { dot = "g"; pace = "Ahead of schedule"; }
-    else if (gap >= -0.05) { dot = "y"; pace = "On track"; }
-    else { dot = "r"; pace = "Behind schedule"; }
-    if (trend !== null) {
-      if (trend >= 0) { dot = "r"; pace += " — not trending down"; }
-      else if (projDate) pace += ` · proj ${r1(cw + trend * daysLeft)}kg ~${fmtShort(projDate)}`;
-    }
-  }
+  // Dot-only indicator now (no "Behind schedule"/"Ahead of schedule" text —
+  // less crowded). Red/green purely from the trend projection: if you'd
+  // reach the target LATER than its date at your current rate, red;
+  // otherwise (on time, ahead, or already there) green. No dot at all until
+  // there's enough weight history to project a trend.
+  let dot = "";
+  if (cw <= tgt) dot = "g";
+  else if (trend !== null) dot = (trend >= 0 || (projDate && projDate > date)) ? "r" : "g";
   return `<div class="goal-card">
     <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="target"></span>${esc(g.label)}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
     <div class="goal-nums"><span class="goal-cur">${r1(cw)}</span><span class="goal-arrow">→</span><span class="goal-tgt">${r1(tgt)} kg</span></div>
     <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div><span class="goal-bar-pct">${r0(pct * 100)}%</span></div>
     <div class="goal-time-bar"><div class="goal-time-fill ${nearDeadline ? "near-deadline" : ""}" style="width:${(1 - elapsedFrac) * 100}%"><span class="goal-time-label ${nearDeadline ? "near-deadline" : ""}">${fmtDuration(daysLeft)} left</span></div></div>
-    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost (${r1(Math.max(0, need - lost))} kg left)</span>${pace ? `<span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span>` : ""}</div>
+    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost (${r1(Math.max(0, need - lost))} kg left)</span>${dot ? `<span class="goal-pace"><span class="pace-dot ${dot}"></span></span>` : ""}</div>
   </div>`;
 }
 let goalsExpanded = false;
