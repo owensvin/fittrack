@@ -220,8 +220,9 @@
         <div class="card-head">
           <h3><span class="ic t-blue" data-ic="calendar"></span>This week</h3>
         </div>
+        <div class="break-banner hidden" id="breakBanner"></div>
         <div class="week-sched" id="weekSchedRow"></div>
-        <p class="muted" style="margin-top:10px">Tap to see the full month or edit schedule.</p>
+        <p class="muted" style="margin-top:10px">Tap a day to edit it, or tap here for the full month.</p>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="timer"></span>Interval timer</h3></div>
@@ -467,7 +468,7 @@
         </div>
         <label class="field-label" style="margin-top:10px">Week starts</label>
         <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
-        <button class="btn ghost full" id="scheduleSettingsBtn" style="margin-top:10px">Edit training schedule</button>
+        <button class="btn ghost full" id="scheduleSettingsBtn" style="margin-top:10px">Manage training workouts</button>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="info"></span>Glossary</h3></div>
@@ -754,28 +755,66 @@
         <button class="day-nav" id="schedMonthNext"><span class="ic" data-ic="chevR"></span></button>
       </div>
       <div class="cal-grid" id="schedMonthGrid"></div>
-      <p class="muted" style="margin-top:10px">Your recurring weekly pattern, applied to every date.</p>
-      <button class="btn ghost full" id="scheduleEditBtn" style="margin-top:10px">Edit schedule</button>
+      <p class="muted" style="margin-top:10px">Your recurring weekly pattern, applied to every date. Tap any day above to edit it.</p>
+      <button class="btn ghost full" id="scheduleEditBtn" style="margin-top:10px">Manage workouts &amp; breaks</button>
     </div>
   </div>
 
-  <!-- ===== Training schedule: edit weekly pattern + workouts ===== -->
+  <!-- ===== Training schedule: manage workouts + break ===== -->
   <div id="scheduleEditSheet" class="sheet hidden">
     <div class="sheet-panel small">
       <div class="sheet-head">
-        <h2>Edit training schedule</h2>
+        <h2>Manage workouts</h2>
         <button class="sheet-close" id="scheduleEditClose"><span class="ic" data-ic="x"></span></button>
       </div>
       <div class="sheet-scroll">
-        <p class="field-label">Active workouts <span class="muted" style="font-weight:400">(from your Today's Activity / Recent sessions list)</span></p>
-        <div class="chips wrap" id="activeWorkoutChips"></div>
-        <p class="field-label" style="margin-top:16px">Weekly days <span class="muted" style="font-weight:400">(days left blank stay rest days)</span></p>
-        <div id="scheduleEditRows"></div>
+        <p class="field-label">Scheduled workouts <span class="muted" style="font-weight:400">(days, and an optional reminder, per workout)</span></p>
+        <ul id="scheduledWorkoutList" class="entry-list sched-list"></ul>
+        <button class="btn ghost full" id="addScheduledWorkoutBtn" style="margin-top:10px"><span class="ic" data-ic="plus"></span> Add workout</button>
         <div id="workoutTemplateSection" class="hidden">
           <p class="field-label" style="margin-top:16px">Your workouts</p>
           <ul id="workoutTemplateList" class="entry-list"></ul>
         </div>
+        <p class="field-label" style="margin-top:20px"><span class="ic" data-ic="moon"></span> Take a break</p>
+        <p class="muted" id="breakActiveInfo" style="margin-top:-2px"><span></span> <button class="btn ghost" id="breakEndNowBtn" style="margin-top:8px">End break now</button></p>
+        <div id="breakForm">
+          <p class="muted" style="margin-top:-2px">Pause your schedule — every day shows as rest until it ends, then resumes exactly as it was.</p>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:10px">
+            <input type="number" id="breakAmount" value="1" min="1" step="1" inputmode="numeric" style="max-width:70px; flex-shrink:0">
+            <div class="chips" id="breakUnitChips" style="margin:0">
+              <button data-unit="days" class="active">Days</button>
+              <button data-unit="weeks">Weeks</button>
+              <button data-unit="months">Months</button>
+            </div>
+          </div>
+          <button class="btn ghost full" id="breakStartBtn" style="margin-top:10px">Start break</button>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Training schedule: pick a workout to add ===== -->
+  <div id="scheduleWorkoutPicker" class="sheet hidden">
+    <div class="sheet-panel">
+      <div class="sheet-head">
+        <h2>Add a workout</h2>
+        <button class="sheet-close" id="scheduleWorkoutPickerClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div id="scheduleWorkoutPickerList" class="food-list"></div>
+    </div>
+  </div>
+
+  <!-- ===== Training schedule: edit a single day ===== -->
+  <div id="dayEditSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2 id="dayEditTitle">Monday</h2>
+        <button class="sheet-close" id="dayEditClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <p class="muted">Applies to every week — set what happens on this weekday.</p>
+      <div class="chips wrap" id="dayEditChips"></div>
+      <button class="btn ghost full" id="dayEditRestBtn" style="margin-top:12px">Set as rest day</button>
+      <button class="btn ghost full" id="dayEditManageBtn" style="margin-top:8px">Manage workouts</button>
     </div>
   </div>
 

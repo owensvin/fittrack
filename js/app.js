@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.2";
+const APP_VERSION = "3.3";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -186,11 +186,66 @@ function orderedDayKeys() {
   const monStart = (state.settings.weekStart || "mon") === "mon";
   return monStart ? DAY_KEYS : ["sun", ...DAY_KEYS.slice(0, 6)];
 }
-function scheduleDayInfo(dk) {
+// A break is a real date range (not a weekday pattern) that overrides the
+// recurring schedule without touching it — it resumes exactly as it was
+// once the break ends.
+function isOnBreak(dateKey) {
+  const b = state.trainingBreak;
+  return !!(b && dateKey >= b.from && dateKey <= b.until);
+}
+function scheduleDayInfo(date) {
+  const dateKey = toKey(date);
+  if (isOnBreak(dateKey)) return { rest: true, ic: "moon", name: "Break", onBreak: true };
+  const dk = dayKeyOf(date);
   const ids = state.trainingSchedule[dk] || [];
   const workouts = ids.map(workoutById).filter(Boolean);
-  if (!workouts.length) return { rest: true, ic: "moon", name: "Rest" };
-  return { rest: false, ic: workouts[0].ic || "dumbbell", name: workouts.length > 1 ? `${workouts[0].name} +${workouts.length - 1}` : workouts[0].name };
+  if (!workouts.length) return { rest: true, ic: "moon", name: "Rest", count: 0 };
+  return { rest: false, ic: workouts[0].ic || "dumbbell", name: workouts.length > 1 ? `${workouts[0].name} +${workouts.length - 1}` : workouts[0].name, count: workouts.length };
+}
+function workoutNotif(id) { return state.workoutNotifs[id] || (state.workoutNotifs[id] = { enabled: false, time: "07:00" }); }
+// Capacitor's schedule.on.weekday is 1=Sunday..7=Saturday (see the weekly-
+// review notification below) — map our Mon-first DAY_KEYS onto that.
+const CAP_WEEKDAY = { sun: 1, mon: 2, tue: 3, wed: 4, thu: 5, fri: 6, sat: 7 };
+// One local-notification id per (workout, weekday) so a workout scheduled on
+// several days can have several independent recurring alarms — derived from
+// a simple string hash of the workout id so it's stable across reloads
+// without needing to persist a counter.
+function workoutNotifIds(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  const base = 9000 + (Math.abs(h) % 9000) * 10;
+  const ids = {};
+  DAY_KEYS.forEach((dk, i) => { ids[dk] = base + i; });
+  return ids;
+}
+async function cancelWorkoutNotif(id) {
+  const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
+  if (!isNativeApp() || !LN) return;
+  const ids = workoutNotifIds(id);
+  try { await LN.cancel({ notifications: DAY_KEYS.map((dk) => ({ id: ids[dk] })) }); } catch (_) {}
+}
+// Cancels then (if enabled) reschedules all of a workout's day-notifications —
+// simplest way to keep them in sync with day-toggle/time/enabled changes
+// without tracking a separate diff.
+async function rescheduleWorkoutNotif(id) {
+  const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
+  if (!isNativeApp() || !LN) return;
+  const ids = workoutNotifIds(id);
+  try {
+    await LN.cancel({ notifications: DAY_KEYS.map((dk) => ({ id: ids[dk] })) });
+    const notif = state.workoutNotifs[id];
+    if (!notif || !notif.enabled) return;
+    const scheduledDays = DAY_KEYS.filter((dk) => (state.trainingSchedule[dk] || []).includes(id));
+    if (!scheduledDays.length) return;
+    const perm = await LN.requestPermissions();
+    if (perm.display !== "granted") { toast("Notification permission denied"); notif.enabled = false; save(); return; }
+    const w = workoutById(id);
+    const [h, m] = notif.time.split(":").map(Number);
+    await LN.schedule({ notifications: scheduledDays.map((dk) => ({
+      id: ids[dk], title: "FitTrack", body: `Scheduled: ${w ? w.name : "workout"}`,
+      schedule: { on: { weekday: CAP_WEEKDAY[dk], hour: h, minute: m }, repeats: true },
+    })) });
+  } catch (e) { toast("Couldn't schedule workout reminder"); }
 }
 // Shared markup + wiring for "which days does this workout happen on" rows —
 // used by both the Settings/Training editor (all workouts) and onboarding
@@ -244,6 +299,8 @@ function defaultState() {
     workoutTemplates: [],
     activeWorkoutIds: [],
     trainingSchedule: defaultTrainingSchedule(),
+    trainingBreak: null, // {from, until} date-key range; overrides the weekly pattern without editing it
+    workoutNotifs: {}, // workoutId -> {enabled, time}
     settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, appleHealth: { weight: false, steps: false, sleep: false, lastSync: null }, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
@@ -256,6 +313,8 @@ function loadState() {
       if (!s.workoutTemplates) s.workoutTemplates = [];
       if (!s.activeWorkoutIds) s.activeWorkoutIds = [];
       if (!s.trainingSchedule) s.trainingSchedule = defaultTrainingSchedule();
+      if (s.trainingBreak === undefined) s.trainingBreak = null;
+      if (!s.workoutNotifs) s.workoutNotifs = {};
       if (!s.settings.reminder) s.settings.reminder = { enabled: false, time: "19:00" };
       if (s.settings.waterEnabled === undefined) s.settings.waterEnabled = true;
       if (s.settings.reduceMotion === undefined) s.settings.reduceMotion = false;
@@ -644,6 +703,13 @@ const WHATS_NEW = {
     "Custom workouts — save your own named workouts with an intensity level, usable in your training schedule.",
     "Share custom foods and workouts with anyone else running FitTrack — export one as a file via the Share sheet, they import it from Settings and it's added straight to their library.",
     "Goals: the progress bar and the time-remaining bar are now the same length, with days/months left shown directly on the bar, plus how many kg are left next to how many you've lost.",
+  ],
+  "3.3": [
+    "Goal bars now show ahead/behind schedule at a glance — the green bar is your actual progress, the thin grey bar under it is where you'd be if perfectly on pace.",
+    "Training: manage your schedule from a per-workout list instead of a wall of toggles — add a workout from a searchable picker, set its days and an optional reminder right on its row.",
+    "Take a break — pause your training schedule for a set number of days/weeks/months; it resumes exactly as it was once the break ends.",
+    "This week strip now shows a compact icon + count per day instead of a name that could run long, so it no longer overflows on any screen size — today is now outlined in yellow.",
+    "Apple Health: \"Sync now\" always asks for permission, even if you haven't turned on a specific type yet.",
   ],
 };
 function showWhatsNewSheet(version) {
@@ -2261,15 +2327,33 @@ function renderScheduleWeek() {
   const dates = weekDatesFor(new Date());
   const todayK = todayKey();
   $("#weekSchedRow").innerHTML = dates.map((d) => {
-    const dk = dayKeyOf(d), info = scheduleDayInfo(dk), isToday = toKey(d) === todayK;
-    return `<div class="sched-day${isToday ? " today" : ""}">
+    const dk = dayKeyOf(d), info = scheduleDayInfo(d), isToday = toKey(d) === todayK;
+    // Icon + a "×N" count instead of the workout's name — a name (or the old
+    // "Name +N" label) is unbounded length and was the actual cause of the
+    // week strip bleeding; an icon and a 1-2 digit count never grow.
+    const label = info.rest ? "Rest" : (info.count > 1 ? `×${info.count}` : "");
+    return `<div class="sched-day${isToday ? " today" : ""}" data-dk="${dk}">
       <span class="sched-dow">${DAY_LABELS[dk]}</span>
       <span class="sched-date">${d.getDate()}</span>
       <span class="ic sched-ic${info.rest ? " rest" : ""}" data-ic="${info.ic}"></span>
-      <span class="sched-label">${esc(info.name)}</span>
+      <span class="sched-label">${label}</span>
     </div>`;
   }).join("");
   renderIcons($("#weekSchedRow"));
+  // stopPropagation so tapping a day doesn't also trigger the card's
+  // makeCardExpandable click-through to the full month sheet.
+  $$("#weekSchedRow .sched-day").forEach((el) => el.addEventListener("click", (e) => { e.stopPropagation(); openDayEdit(el.dataset.dk); }));
+  renderBreakBanner();
+}
+function renderBreakBanner() {
+  const b = state.trainingBreak, el = $("#breakBanner");
+  if (!el) return;
+  const active = b && b.until >= todayKey();
+  el.classList.toggle("hidden", !active);
+  if (active) el.innerHTML = `<span><span class="ic" data-ic="moon"></span>On a break until ${fmtShort(b.until)}</span><button class="btn ghost" id="breakEndBtn">End early</button>`;
+  renderIcons(el);
+  const endBtn = $("#breakEndBtn");
+  if (endBtn) endBtn.addEventListener("click", () => { state.trainingBreak = null; save(); renderScheduleWeek(); toast("Break ended"); });
 }
 let schedMonth = new Date();
 function renderScheduleMonth() {
@@ -2284,20 +2368,83 @@ function renderScheduleMonth() {
   let html = dows.map((d) => `<div class="cal-dow">${d}</div>`).join("");
   for (let i = 0; i < offset; i++) html += `<div class="cal-cell empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, month, d), dk = dayKeyOf(date), info = scheduleDayInfo(dk);
+    const date = new Date(year, month, d), dk = dayKeyOf(date), info = scheduleDayInfo(date);
     const isToday = toKey(date) === todayK;
-    html += `<div class="cal-cell static${isToday ? " today" : ""}">
+    html += `<div class="cal-cell static${isToday ? " today" : ""}" data-dk="${dk}">
       <span class="cal-daynum">${d}</span>
       <span class="ic sched-cell-ic${info.rest ? " rest" : ""}" data-ic="${info.ic}"></span>
     </div>`;
   }
   $("#schedMonthGrid").innerHTML = html;
   renderIcons($("#schedMonthGrid"));
+  $$("#schedMonthGrid .cal-cell.static").forEach((el) => el.addEventListener("click", () => openDayEdit(el.dataset.dk)));
 }
 $("#schedMonthPrev").addEventListener("click", () => { schedMonth.setMonth(schedMonth.getMonth() - 1); renderScheduleMonth(); });
 $("#schedMonthNext").addEventListener("click", () => { schedMonth.setMonth(schedMonth.getMonth() + 1); renderScheduleMonth(); });
 makeCardExpandable("#scheduleCard", () => { renderScheduleMonth(); $("#scheduleMonthSheet").classList.remove("hidden"); });
 wireSheetClose("scheduleMonthSheet", "scheduleMonthClose");
+
+// Day-first quick-edit: tap a day (in the week strip or the month grid) to
+// toggle its workouts without opening the full Manage Workouts sheet. This
+// is a shortcut on top of the same state.trainingSchedule data the
+// Manage Workouts rows (renderScheduledWorkoutList) edit — either one keeps
+// the other in sync since both just mutate the shared per-weekday arrays.
+const DAY_FULL = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+let dayEditDk = null;
+function openDayEdit(dk) {
+  dayEditDk = dk;
+  $("#dayEditTitle").textContent = DAY_FULL[dk];
+  renderDayEditChips();
+  $("#scheduleMonthSheet").classList.add("hidden");
+  $("#dayEditSheet").classList.remove("hidden");
+}
+function renderDayEditChips() {
+  const active = state.activeWorkoutIds.map(workoutById).filter(Boolean);
+  const arr = state.trainingSchedule[dayEditDk] || (state.trainingSchedule[dayEditDk] = []);
+  $("#dayEditChips").innerHTML = active.length
+    ? active.map((w) => `<button data-id="${w.id}" class="${arr.includes(w.id) ? "active" : ""}"><span class="ic" data-ic="${w.ic || "dumbbell"}"></span>${esc(w.name)}</button>`).join("")
+    : `<p class="muted">No workouts set up yet — add one in "Manage workouts" below.</p>`;
+  renderIcons($("#dayEditChips"));
+  $$("#dayEditChips button").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.id, idx = arr.indexOf(id);
+    if (idx >= 0) arr.splice(idx, 1); else arr.push(id);
+    b.classList.toggle("active");
+    save(); renderScheduleWeek(); rescheduleWorkoutNotif(id);
+  }));
+}
+$("#dayEditRestBtn").addEventListener("click", () => {
+  const cleared = state.trainingSchedule[dayEditDk] || [];
+  state.trainingSchedule[dayEditDk] = [];
+  save(); renderDayEditChips(); renderScheduleWeek(); toast(`${DAY_FULL[dayEditDk]} set to rest`);
+  cleared.forEach(rescheduleWorkoutNotif);
+});
+$("#dayEditManageBtn").addEventListener("click", () => { $("#dayEditSheet").classList.add("hidden"); openScheduleEdit(); });
+wireSheetClose("dayEditSheet", "dayEditClose", () => { $("#dayEditSheet").classList.add("hidden"); renderScheduleWeek(); });
+
+// Training break: a real date range that overrides the recurring weekly
+// pattern without editing it, so the schedule resumes exactly as it was.
+const BREAK_UNIT_DAYS = { days: 1, weeks: 7, months: 30 };
+let breakUnit = "days";
+function renderBreakForm() {
+  const b = state.trainingBreak, active = !!(b && b.until >= todayKey());
+  $("#breakActiveInfo").classList.toggle("hidden", !active);
+  $("#breakForm").classList.toggle("hidden", active);
+  if (active) $("#breakActiveInfo").querySelector("span").textContent = `On a break until ${fmtShort(b.until)}.`;
+}
+$$("#breakUnitChips button").forEach((btn) => btn.addEventListener("click", () => {
+  breakUnit = btn.dataset.unit;
+  $$("#breakUnitChips button").forEach((x) => x.classList.toggle("active", x === btn));
+}));
+$("#breakStartBtn").addEventListener("click", () => {
+  const n = Math.max(1, parseInt($("#breakAmount").value, 10) || 1);
+  const days = n * BREAK_UNIT_DAYS[breakUnit];
+  state.trainingBreak = { from: todayKey(), until: addDays(todayKey(), days - 1) };
+  save(); renderBreakForm(); renderScheduleWeek(); toast("Break started");
+});
+$("#breakEndNowBtn").addEventListener("click", () => {
+  state.trainingBreak = null;
+  save(); renderBreakForm(); renderScheduleWeek(); toast("Break ended");
+});
 
 // Deactivating (or deleting) a workout also clears it out of every day's
 // list — otherwise it'd linger as an invisible assignment with no way to see
@@ -2308,25 +2455,77 @@ function unassignWorkout(id) {
     if (idx >= 0) arr.splice(idx, 1);
   }
 }
-function renderActiveWorkoutChips() {
-  $("#activeWorkoutChips").innerHTML = allWorkouts().map((w) =>
-    `<button data-id="${w.id}" class="${state.activeWorkoutIds.includes(w.id) ? "active" : ""}">${esc(w.name)}</button>`).join("");
-  $$("#activeWorkoutChips button").forEach((b) => b.addEventListener("click", () => {
-    const id = b.dataset.id, idx = state.activeWorkoutIds.indexOf(id);
-    if (idx >= 0) { state.activeWorkoutIds.splice(idx, 1); unassignWorkout(id); }
-    else state.activeWorkoutIds.push(id);
-    b.classList.toggle("active");
-    save(); renderScheduleEditRows(); renderScheduleWeek();
+// Which workouts exist in the schedule at all — added one at a time via a
+// searchable picker (scheduleWorkoutPicker) rather than shown as an
+// always-visible toggle-everything chip grid, per user feedback that the
+// old all-workouts list was hard to scan. Each scheduled workout gets its
+// own row: day chips (recurring weekly, same data model as before) plus an
+// optional reminder notification.
+function renderScheduledWorkoutList() {
+  const active = state.activeWorkoutIds.map(workoutById).filter(Boolean);
+  const days = orderedDayKeys();
+  $("#scheduledWorkoutList").innerHTML = active.length
+    ? active.map((w) => {
+        const notif = workoutNotif(w.id);
+        return `<li class="sched-row" data-id="${w.id}">
+          <div class="sched-row-head">
+            <span class="row-label"><span class="ic" data-ic="${w.ic || "dumbbell"}"></span>${esc(w.name)}</span>
+            <button class="fi-del" data-id="${w.id}"><span class="ic" data-ic="x"></span></button>
+          </div>
+          <div class="chips ws-days" data-id="${w.id}">
+            ${days.map((dk) => `<button data-day="${dk}" class="${(state.trainingSchedule[dk] || []).includes(w.id) ? "active" : ""}">${DAY_LABELS[dk]}</button>`).join("")}
+          </div>
+          <div class="sched-notif-row">
+            <label class="switch"><input type="checkbox" data-notif-toggle="${w.id}" ${notif.enabled ? "checked" : ""}><span class="knob"></span></label>
+            <span class="muted">Remind me</span>
+            <input type="time" data-notif-time="${w.id}" value="${notif.time}" ${notif.enabled ? "" : "disabled"}>
+          </div>
+        </li>`;
+      }).join("")
+    : `<li class="muted" style="border-top:none">No workouts scheduled yet — tap "Add workout" below.</li>`;
+  renderIcons($("#scheduledWorkoutList"));
+  $$("#scheduledWorkoutList .ws-days button").forEach((btn) => btn.addEventListener("click", () => {
+    const id = btn.closest(".ws-days").dataset.id, dk = btn.dataset.day;
+    const arr = state.trainingSchedule[dk] || (state.trainingSchedule[dk] = []);
+    const idx = arr.indexOf(id);
+    if (idx >= 0) arr.splice(idx, 1); else arr.push(id);
+    btn.classList.toggle("active");
+    save(); renderScheduleWeek(); rescheduleWorkoutNotif(id);
+  }));
+  $$("#scheduledWorkoutList .fi-del").forEach((btn) => btn.addEventListener("click", () => {
+    const id = btn.dataset.id;
+    state.activeWorkoutIds = state.activeWorkoutIds.filter((x) => x !== id);
+    unassignWorkout(id);
+    delete state.workoutNotifs[id];
+    cancelWorkoutNotif(id);
+    save(); renderScheduledWorkoutList(); renderScheduleWeek();
+  }));
+  $$("#scheduledWorkoutList [data-notif-toggle]").forEach((cb) => cb.addEventListener("change", () => {
+    const id = cb.dataset.notifToggle;
+    workoutNotif(id).enabled = cb.checked;
+    save(); renderScheduledWorkoutList(); rescheduleWorkoutNotif(id);
+  }));
+  $$("#scheduledWorkoutList [data-notif-time]").forEach((inp) => inp.addEventListener("change", () => {
+    const id = inp.dataset.notifTime;
+    workoutNotif(id).time = inp.value;
+    save(); rescheduleWorkoutNotif(id);
   }));
 }
-function renderScheduleEditRows() {
-  const active = state.activeWorkoutIds.map(workoutById).filter(Boolean);
-  $("#scheduleEditRows").innerHTML = active.length
-    ? scheduleAssignRowsHTML(state.trainingSchedule, active)
-    : `<p class="muted">Pick at least one workout above to set which days it happens on.</p>`;
-  renderIcons($("#scheduleEditRows"));
-  wireScheduleAssign("#scheduleEditRows", state.trainingSchedule, () => { save(); renderScheduleWeek(); });
+function renderScheduleWorkoutPicker() {
+  const avail = allWorkouts().filter((w) => !state.activeWorkoutIds.includes(w.id));
+  $("#scheduleWorkoutPickerList").innerHTML = avail.length
+    ? avail.map((w) => `<button class="food-row" data-id="${w.id}"><span class="ic fr-ic" data-ic="${w.ic || "dumbbell"}"></span><div class="fr-main"><div class="fr-name">${esc(w.name)}</div></div></button>`).join("")
+    : `<p class="food-empty">All your workouts are already scheduled.</p>`;
+  renderIcons($("#scheduleWorkoutPickerList"));
+  $$("#scheduleWorkoutPickerList .food-row").forEach((btn) => btn.addEventListener("click", () => {
+    state.activeWorkoutIds.push(btn.dataset.id);
+    save();
+    $("#scheduleWorkoutPicker").classList.add("hidden");
+    renderScheduledWorkoutList(); renderScheduleWeek();
+  }));
 }
+$("#addScheduledWorkoutBtn").addEventListener("click", () => { renderScheduleWorkoutPicker(); $("#scheduleWorkoutPicker").classList.remove("hidden"); });
+wireSheetClose("scheduleWorkoutPicker", "scheduleWorkoutPickerClose");
 function renderWorkoutTemplateList() {
   $("#workoutTemplateSection").classList.toggle("hidden", !state.workoutTemplates.length);
   $("#workoutTemplateList").innerHTML = state.workoutTemplates.map((w) =>
@@ -2342,7 +2541,7 @@ function renderWorkoutTemplateList() {
     const i = state.activeWorkoutIds.indexOf(id);
     if (i >= 0) state.activeWorkoutIds.splice(i, 1);
     unassignWorkout(id);
-    save(); renderWorkoutTemplateList(); renderActiveWorkoutChips(); renderScheduleEditRows(); renderScheduleWeek();
+    save(); renderWorkoutTemplateList(); renderScheduledWorkoutList(); renderScheduleWeek();
   }));
   $$("#workoutTemplateList .fi-share").forEach((b) => b.addEventListener("click", () => {
     const w = state.workoutTemplates.find((x) => x.id === b.dataset.share);
@@ -2350,8 +2549,9 @@ function renderWorkoutTemplateList() {
   }));
 }
 function openScheduleEdit() {
-  renderActiveWorkoutChips(); renderScheduleEditRows(); renderWorkoutTemplateList();
+  renderScheduledWorkoutList(); renderWorkoutTemplateList(); renderBreakForm();
   $("#scheduleMonthSheet").classList.add("hidden");
+  $("#dayEditSheet").classList.add("hidden");
   $("#scheduleEditSheet").classList.remove("hidden");
 }
 $("#scheduleEditBtn").addEventListener("click", openScheduleEdit);
@@ -2433,12 +2633,18 @@ function goalCard(g) {
   const windowDays = Math.max(1, daysBetween(g.created || p.startDate, date));
   const elapsedFrac = clamp(daysBetween(g.created || p.startDate, todayKey()) / windowDays, 0, 1);
   const nearDeadline = daysLeft <= 14;
+  // Bar semantics: green = actual progress toward the goal; the thin grey
+  // bar underneath = expected progress if perfectly on pace (time elapsed /
+  // total window). Green extending past the grey means ahead of schedule;
+  // grey showing past the end of green means behind — same comparison the
+  // pace dot/text already make, just made visible at a glance.
+  const barCls = dot === "r" ? " bad" : dot === "y" ? " warn" : "";
   return `<div class="goal-card">
     <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="target"></span>${esc(g.label)}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
     <div class="goal-nums"><span class="goal-cur">${r1(cw)}</span><span class="goal-arrow">→</span><span class="goal-tgt">${r1(tgt)} kg</span></div>
-    <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div></div>
-    <div class="goal-time-bar"><div class="goal-time-fill ${nearDeadline ? "near-deadline" : ""}" style="width:${(1 - elapsedFrac) * 100}%"><span class="goal-time-label ${nearDeadline ? "near-deadline" : ""}">${fmtDuration(daysLeft)} left</span></div></div>
-    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost (${r1(Math.max(0, need - lost))} kg left)</span>${pace ? `<span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span>` : ""}</div>
+    <div class="goal-bar"><div class="goal-bar-fill${barCls}" style="width:${pct * 100}%"></div></div>
+    <div class="goal-pace-bar"><div class="goal-pace-fill" style="width:${elapsedFrac * 100}%"></div></div>
+    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost (${r1(Math.max(0, need - lost))} kg left) · <span class="${nearDeadline ? "t-red" : ""}">${fmtDuration(daysLeft)} left</span></span>${pace ? `<span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span>` : ""}</div>
   </div>`;
 }
 let goalsExpanded = false;
@@ -3534,12 +3740,21 @@ async function syncAppleHealth(manual) {
   if (h.weight) kinds.push("weight");
   if (h.steps) kinds.push("steps");
   if (h.sleep) kinds.push("sleep");
-  if (!kinds.length) { if (manual) toast("Turn on at least one type to sync"); return; }
+  // Previously bailed here with no kinds enabled — meaning if you never
+  // flipped a toggle on (just opened Settings and looked), the OS permission
+  // request never fired at all, and nothing would show up under iOS
+  // Settings/Health for the app. "Sync now" is the one explicit, unambiguous
+  // action to ask for access, so it always requests all three read types
+  // regardless of toggle state; automatic background syncs (app open) still
+  // only ask for whatever's actually turned on.
+  if (!manual && !kinds.length) return;
+  const requestKinds = manual ? ["weight", "steps", "sleep"] : kinds;
   try {
     const avail = await HealthKit.availability();
     if (!avail.available) { if (manual) toast("Health data isn't available on this device"); return; }
-    const auth = await HealthKit.requestAuthorization({ read: kinds });
+    const auth = await HealthKit.requestAuthorization({ read: requestKinds });
     if (!auth.granted) { if (manual) toast("Apple Health access wasn't granted"); return; }
+    if (!kinds.length) { if (manual) toast("Access granted — turn on a type above to start syncing"); return; }
     const sinceIso = h.lastSync || fromKey(addDays(todayKey(), -30)).toISOString();
     let addedWeights = 0;
     if (h.weight) {
@@ -3812,7 +4027,7 @@ $("#importInput").addEventListener("change", async (e) => {
     } else if (data.fittrackShare === "workout" && data.workout) {
       const w = data.workout;
       state.workoutTemplates.push({ id: "wt" + Date.now(), name: w.name, ic: w.ic || "dumbbell", met: w.met || 6 });
-      save(); renderWorkoutTemplateList(); renderActiveWorkoutChips(); renderScheduleEditRows();
+      save(); renderWorkoutTemplateList(); renderScheduledWorkoutList();
       toast(`Added "${w.name}" to your workouts`);
     } else {
       throw new Error("not a FitTrack backup or shared item");
