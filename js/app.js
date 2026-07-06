@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.3";
+const APP_VERSION = "3.4";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -710,6 +710,9 @@ const WHATS_NEW = {
     "Take a break — pause your training schedule for a set number of days/weeks/months; it resumes exactly as it was once the break ends.",
     "This week strip now shows a compact icon + count per day instead of a name that could run long, so it no longer overflows on any screen size — today is now outlined in yellow.",
     "Apple Health: \"Sync now\" always asks for permission, even if you haven't turned on a specific type yet.",
+  ],
+  "3.4": [
+    "Custom foods: swipe left to Share, Edit, or Delete, same as everywhere else in the app — the favorite star stays put since that's a one-tap action.",
   ],
 };
 function showWhatsNewSheet(version) {
@@ -1438,20 +1441,54 @@ function renderFoodList() {
     return;
   }
   const shown = rows.slice(0, 80);
+  // Custom foods get a swipeable row (edit/share/delete behind a swipe,
+  // matching every other manage-your-own-stuff list in the app) instead of
+  // always-visible tiny icon buttons — the favorite star stays visible since
+  // that's a quick one-tap action, not a "manage this entry" action.
+  if (sheetTab === "custom") {
+    $("#foodList").innerHTML = shown.map((f, i) => {
+      const fav = state.favs.includes(f.id);
+      return `<li class="food-row" data-i="${i}">
+        <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${macroTags(f)}</div></div>
+        <span class="fr-kcal">${r0(f.kcal)}</span>
+        <span class="fav-btn ${fav ? "on" : ""}" data-fav="${f.id}">${fav ? "★" : "☆"}</span>
+        <button class="fi-share" data-share="${f.id}"><span class="ic" data-ic="share"></span></button>
+        <button class="fi-edit" data-editc="${f.id}"><span class="ic" data-ic="pencil"></span></button>
+        <button class="fi-del" data-delc="${f.id}"><span class="ic" data-ic="x"></span></button>
+      </li>`;
+    }).join("");
+    renderIcons($("#foodList"));
+    $$("#foodList .food-row").forEach((li) => li.addEventListener("click", () => openDetail(shown[+li.dataset.i], "serving")));
+    $$("#foodList .fav-btn").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = b.dataset.fav, ix = state.favs.indexOf(id);
+      ix >= 0 ? state.favs.splice(ix, 1) : state.favs.push(id);
+      save(); renderFoodList();
+    }));
+    $$("#foodList .fi-share").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const f = state.customFoods.find((x) => x.id === b.dataset.share);
+      if (f) shareItem(`fittrack-food-${slugify(f.name)}.json`, { fittrackShare: "food", version: 1, food: { name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f } }, "FitTrack Food");
+    }));
+    $$("#foodList .fi-edit").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); openEditCustomFood(b.dataset.editc); }));
+    $$("#foodList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.customFoods = state.customFoods.filter((c) => c.id !== b.dataset.delc);
+      save(); renderFoodList();
+    }));
+    makeSwipeable($("#foodList"));
+    return;
+  }
   $("#foodList").innerHTML = shown.map((f, i) => {
     const fav = state.favs.includes(f.id);
     return `<button class="food-row" data-i="${i}">
       <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${macroTags(f)}</div></div>
       <span class="fr-kcal">${r0(f.kcal)}</span>
-      ${f.id ? `<span class="fav-btn ${fav ? "on" : ""}" data-fav="${f.id}">${fav ? "★" : "☆"}</span>` : ""}
-      ${sheetTab === "custom" ? `<span class="fav-btn" data-sharec="${f.id}">↗</span><span class="fav-btn" data-editc="${f.id}">✎</span><span class="fav-btn" data-delc="${f.id}">✕</span>` : ""}</button>`;
+      ${f.id ? `<span class="fav-btn ${fav ? "on" : ""}" data-fav="${f.id}">${fav ? "★" : "☆"}</span>` : ""}</button>`;
   }).join("");
   $$("#foodList .food-row").forEach((el) => el.addEventListener("click", (e) => {
-    const fav = e.target.dataset.fav, del = e.target.dataset.delc, editc = e.target.dataset.editc, sharec = e.target.dataset.sharec;
-    if (sharec) { const f = state.customFoods.find((x) => x.id === sharec); if (f) shareItem(`fittrack-food-${slugify(f.name)}.json`, { fittrackShare: "food", version: 1, food: { name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f } }, "FitTrack Food"); return; }
-    if (editc) { openEditCustomFood(editc); return; }
+    const fav = e.target.dataset.fav;
     if (fav) { const ix = state.favs.indexOf(fav); ix >= 0 ? state.favs.splice(ix, 1) : state.favs.push(fav); save(); renderFoodList(); return; }
-    if (del) { state.customFoods = state.customFoods.filter((c) => c.id !== del); save(); renderFoodList(); return; }
     openDetail(shown[+el.dataset.i], "serving");
   }));
 }
@@ -3040,15 +3077,17 @@ Logging streak: ${ctx.streak} days.`;
   el.classList.toggle("hidden", !text);
 }
 
-/* ---------- swipe-left-to-delete (or edit+delete) ---------- */
+/* ---------- swipe-left-to-delete (or edit/share+delete) ---------- */
 // Post-processes a rendered list: wraps each row that has a `.fi-del` so it
 // can be swiped left to reveal a red Delete button (guards against accidental
-// taps). If the row also has a `.fi-edit`, a second blue Edit button reveals
-// alongside it. The original hidden `.fi-del`/`.fi-edit` still carry the
-// actual logic — the revealed buttons just forward a click to them, so every
-// list keeps its existing handlers. A `[data-drag]` handle (if present, for
-// drag-to-reorder lists) is deliberately left outside the swiped content so
-// the vertical drag gesture never competes with this horizontal one.
+// taps). If the row also has a `.fi-edit` and/or `.fi-share`, extra buttons
+// (blue Edit, purple Share) reveal alongside it — Delete innermost, then
+// Edit, then Share, each 84px. The original hidden `.fi-del`/`.fi-edit`/
+// `.fi-share` still carry the actual logic — the revealed buttons just
+// forward a click to them, so every list keeps its existing handlers. A
+// `[data-drag]` handle (if present, for drag-to-reorder lists) is
+// deliberately left outside the swiped content so the vertical drag gesture
+// never competes with this horizontal one.
 let _openSwipe = null;
 function closeSwipe(li) {
   if (!li) return;
@@ -3065,6 +3104,7 @@ function makeSwipeable(container) {
     li.dataset.swipe = "1";
     li.classList.add("swipe-row");
     const edit = li.querySelector(".fi-edit");
+    const share = li.querySelector(".fi-share");
     const dragHandle = li.querySelector("[data-drag]");
     const cs = getComputedStyle(li);
     const content = document.createElement("div");
@@ -3078,7 +3118,14 @@ function makeSwipeable(container) {
     [...li.childNodes].filter((n) => n !== dragHandle).forEach((n) => content.appendChild(n));
     li.appendChild(content);
     if (dragHandle) li.insertBefore(dragHandle, li.firstChild);
-    const W = edit ? 168 : 84;
+    const W = 84 * (1 + (edit ? 1 : 0) + (share ? 1 : 0));
+    if (share) {
+      const purple = document.createElement("button");
+      purple.className = "swipe-share"; purple.type = "button"; purple.textContent = "Share";
+      purple.style.right = `${84 * (1 + (edit ? 1 : 0))}px`;
+      purple.addEventListener("click", (e) => { e.stopPropagation(); closeSwipe(li); share.click(); });
+      li.appendChild(purple);
+    }
     if (edit) {
       const blue = document.createElement("button");
       blue.className = "swipe-edit"; blue.type = "button"; blue.textContent = "Edit";

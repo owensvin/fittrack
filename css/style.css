@@ -623,9 +623,12 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .swipe-row { position: relative; overflow: hidden; }
 .swipe-content { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--card); position: relative; z-index: 1; transform: translateX(0); touch-action: pan-y; }
 .swipe-content.between { justify-content: space-between; }
-.swipe-content .fi-del, .swipe-content .fi-edit { display: none !important; }
+.swipe-content .fi-del, .swipe-content .fi-edit, .swipe-content .fi-share { display: none !important; }
 .swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; border: none; background: var(--red); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .swipe-edit { position: absolute; top: 0; right: 84px; bottom: 0; width: 84px; border: none; background: var(--blue); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+/* right offset set inline per-row by makeSwipeable, since it depends on
+   whether an Edit button also exists on that particular row */
+.swipe-share { position: absolute; top: 0; bottom: 0; width: 84px; border: none; background: var(--purple); color: #fff; font-weight: 700; font-size: var(--fs-sm); z-index: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .chart-tip {
   position: fixed; z-index: 99; transform: translate(-50%, -100%);
   background: var(--card2); color: var(--text); border: 1px solid var(--border);
