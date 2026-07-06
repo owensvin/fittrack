@@ -321,6 +321,27 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 .meal-items .fi-kcal { font-weight: 600; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .fi-del { border: none; background: none; color: var(--muted2); cursor: pointer; padding: 4px 0 4px 8px; display: flex; }
 .fi-del .ic { width: 15px; height: 15px; }
+.fi-share { border: none; background: none; color: var(--muted2); cursor: pointer; padding: 4px 0 4px 8px; display: flex; }
+.fi-share .ic { width: 15px; height: 15px; }
+
+/* ===== Training schedule ===== */
+.week-sched { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.sched-day { background: var(--card2); border-radius: var(--r-sm); padding: 8px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.sched-day.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.sched-dow { font-size: var(--fs-2xs); color: var(--muted); font-weight: 700; }
+.sched-date { font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sched-ic { width: 15px; height: 15px; color: var(--accent); margin: 2px 0; }
+.sched-ic.rest { color: var(--muted2); }
+.sched-label { font-size: 9px; color: var(--muted); text-align: center; line-height: 1.15; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-cell.static { cursor: default; }
+.sched-cell-ic { width: 13px; height: 13px; color: var(--accent); }
+.sched-cell-ic.rest { width: 9px; height: 9px; color: var(--muted2); }
+.ws-row { padding: 10px 0; border-top: 1px solid var(--border); }
+.ws-row:first-child { border-top: none; }
+.ws-name { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 600; margin-bottom: 6px; }
+.ws-name .ic { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
+.ws-days { margin: 0; }
+.ws-days button { padding: 5px 10px; font-size: var(--fs-xs); }
 
 /* ===== Water ===== */
 .water-row { display: flex; align-items: center; gap: 10px; }
@@ -363,12 +384,14 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 .goal-tgt { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
 .goal-bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
 .goal-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.4s var(--ease); }
-.goal-time-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.goal-time-bar { flex: 1; height: 4px; background: var(--track); border-radius: 2px; overflow: hidden; }
-.goal-time-fill { height: 100%; border-radius: 2px; background: var(--muted2); transition: width var(--t-med); }
-.goal-time-fill.urgent { background: var(--red); }
-.goal-time-label { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.goal-time-label.urgent { color: var(--red); font-weight: 700; }
+.goal-time-bar {
+  height: 4px; border-radius: 2px; overflow: visible; margin-bottom: 8px; display: flex; justify-content: flex-end;
+  background: repeating-linear-gradient(135deg, var(--track) 0px, var(--track) 5px, var(--card2) 5px, var(--card2) 10px);
+}
+.goal-time-fill { height: 100%; border-radius: 2px; background: var(--blue); transition: width var(--t-med); display: flex; align-items: center; justify-content: center; position: relative; }
+.goal-time-fill.near-deadline { background: var(--red); }
+.goal-time-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: var(--fs-2xs); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.goal-time-label.near-deadline { font-weight: 700; }
 .goal-foot { display: flex; justify-content: space-between; font-size: var(--fs-xs); }
 .goal-pace { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 
@@ -499,6 +522,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .sheet-close { width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer; background: var(--card2); color: var(--muted); display: flex; align-items: center; justify-content: center; }
 .sheet-close .ic { width: 13px; height: 13px; }
 .chips { display: flex; gap: 7px; margin: 12px 0 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.chips.wrap { flex-wrap: wrap; overflow-x: visible; }
 .chips::-webkit-scrollbar { display: none; }
 .chips button { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; padding: 7px 14px; border-radius: var(--r-full); border: 1px solid var(--border); background: var(--card2); color: var(--muted); cursor: pointer; }
 .chips button.active { background: var(--text); color: var(--bg); border-color: var(--text); }

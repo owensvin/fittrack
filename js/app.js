@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.1";
+const APP_VERSION = "3.2";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -132,6 +132,8 @@ const ICONS = {
   grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
   pencil: '<path d="M4 20l1-4.5L15.5 5 19 8.5 8.5 19 4 20z"/><line x1="13.5" y1="6.5" x2="17" y2="10"/>',
   minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>',
+  share: '<circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><line x1="8.2" y1="10.8" x2="15.8" y2="6.2"/><line x1="8.2" y1="13.2" x2="15.8" y2="17.8"/>',
 };
 function renderIcons(root = document) {
   $$("[data-ic]", root).forEach((el) => {
@@ -168,6 +170,61 @@ const EXERCISES = [
 function defaultSupplements() {
   return [];
 }
+/* ---------- training schedule ---------- */
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LABELS = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
+// Each day holds a list of workout ids (not a single value) — a day can have
+// several variations logged on it, and an empty list just means rest.
+function defaultTrainingSchedule() {
+  return { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+}
+function allWorkouts() { return [...EXERCISES, ...state.workoutTemplates]; }
+function workoutById(id) { return allWorkouts().find((w) => w.id === id); }
+// JS getDay() is 0=Sun..6=Sat; DAY_KEYS is Mon-first, so shift by 6 (mod 7).
+function dayKeyOf(date) { return DAY_KEYS[(date.getDay() + 6) % 7]; }
+function orderedDayKeys() {
+  const monStart = (state.settings.weekStart || "mon") === "mon";
+  return monStart ? DAY_KEYS : ["sun", ...DAY_KEYS.slice(0, 6)];
+}
+function scheduleDayInfo(dk) {
+  const ids = state.trainingSchedule[dk] || [];
+  const workouts = ids.map(workoutById).filter(Boolean);
+  if (!workouts.length) return { rest: true, ic: "moon", name: "Rest" };
+  return { rest: false, ic: workouts[0].ic || "dumbbell", name: workouts.length > 1 ? `${workouts[0].name} +${workouts.length - 1}` : workouts[0].name };
+}
+// Shared markup + wiring for "which days does this workout happen on" rows —
+// used by both the Settings/Training editor (all workouts) and onboarding
+// (built-ins only, no custom-workout creation there).
+function scheduleAssignRowsHTML(schedule, workouts) {
+  const days = orderedDayKeys();
+  return workouts.map((w) => `
+    <div class="ws-row" data-id="${w.id}">
+      <div class="ws-name"><span class="ic" data-ic="${w.ic || "dumbbell"}"></span>${esc(w.name)}</div>
+      <div class="chips ws-days">
+        ${days.map((dk) => `<button data-day="${dk}" class="${(schedule[dk] || []).includes(w.id) ? "active" : ""}">${DAY_LABELS[dk]}</button>`).join("")}
+      </div>
+    </div>`).join("");
+}
+function wireScheduleAssign(containerSel, schedule, onChange) {
+  $$(containerSel + " .ws-row").forEach((row) => {
+    const id = row.dataset.id;
+    $$(".ws-days button", row).forEach((btn) => btn.addEventListener("click", () => {
+      const dk = btn.dataset.day;
+      const arr = schedule[dk] || (schedule[dk] = []);
+      const idx = arr.indexOf(id);
+      if (idx >= 0) arr.splice(idx, 1); else arr.push(id);
+      btn.classList.toggle("active");
+      if (onChange) onChange();
+    }));
+  });
+}
+function weekDatesFor(pivot) {
+  const monStart = (state.settings.weekStart || "mon") === "mon";
+  const dow = pivot.getDay();
+  const diff = monStart ? (dow + 6) % 7 : dow;
+  const start = new Date(pivot); start.setDate(start.getDate() - diff);
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+}
 /* ---------- state ---------- */
 const LS_KEY = "fittrack";
 let state = loadState();
@@ -184,6 +241,9 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     supplements: defaultSupplements(),
+    workoutTemplates: [],
+    activeWorkoutIds: [],
+    trainingSchedule: defaultTrainingSchedule(),
     settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, appleHealth: { weight: false, steps: false, sleep: false, lastSync: null }, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
@@ -193,6 +253,9 @@ function loadState() {
     if (raw) {
       const s = Object.assign(defaultState(), JSON.parse(raw));
       if (!s.supplements || !s.supplements.length) s.supplements = defaultSupplements();
+      if (!s.workoutTemplates) s.workoutTemplates = [];
+      if (!s.activeWorkoutIds) s.activeWorkoutIds = [];
+      if (!s.trainingSchedule) s.trainingSchedule = defaultTrainingSchedule();
       if (!s.settings.reminder) s.settings.reminder = { enabled: false, time: "19:00" };
       if (s.settings.waterEnabled === undefined) s.settings.waterEnabled = true;
       if (s.settings.reduceMotion === undefined) s.settings.reduceMotion = false;
@@ -435,7 +498,8 @@ function weightTrendPerDay() {
 }
 
 /* ---------- onboarding ---------- */
-const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750, supplements: [], goals: [] };
+const OB_STEPS = 6;
+const ob = { step: 0, sex: "male", activity: 1.2, deficit: 750, supplements: [], goals: [], schedule: defaultTrainingSchedule(), activeWorkoutIds: [] };
 function showOnboarding() {
   $("#onboarding").classList.remove("hidden");
   $("#obSex").addEventListener("click", (e) => segPick(e, "#obSex", (v) => (ob.sex = v)));
@@ -459,6 +523,29 @@ function showOnboarding() {
     $("#obSuppName").value = ""; $("#obSuppNote").value = "";
     renderObSupps();
   });
+  renderObSchedule();
+}
+function renderObSchedule() {
+  $("#obActiveWorkoutChips").innerHTML = EXERCISES.map((w) =>
+    `<button data-id="${w.id}" class="${ob.activeWorkoutIds.includes(w.id) ? "active" : ""}">${esc(w.name)}</button>`).join("");
+  $$("#obActiveWorkoutChips button").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.id, idx = ob.activeWorkoutIds.indexOf(id);
+    if (idx >= 0) {
+      ob.activeWorkoutIds.splice(idx, 1);
+      for (const dk of DAY_KEYS) { const arr = ob.schedule[dk], i2 = arr.indexOf(id); if (i2 >= 0) arr.splice(i2, 1); }
+    } else ob.activeWorkoutIds.push(id);
+    b.classList.toggle("active");
+    renderObScheduleRows();
+  }));
+  renderObScheduleRows();
+}
+function renderObScheduleRows() {
+  const active = ob.activeWorkoutIds.map((id) => EXERCISES.find((w) => w.id === id)).filter(Boolean);
+  $("#obScheduleRows").innerHTML = active.length
+    ? scheduleAssignRowsHTML(ob.schedule, active)
+    : `<p class="muted">Pick at least one workout above to set which days it happens on.</p>`;
+  renderIcons($("#obScheduleRows"));
+  wireScheduleAssign("#obScheduleRows", ob.schedule, null);
 }
 function renderObGoals() {
   $("#obGoalList").innerHTML = ob.goals.length
@@ -495,16 +582,16 @@ function obNext() {
     if (!parseFloat($("#obHeight").value) || !parseFloat($("#obWeight").value)) return toast("Enter height and weight");
   }
   if (ob.step === 2 && !ob.goals.length) return toast("Add at least one goal");
-  if (ob.step === 4) return obFinish();
+  if (ob.step === OB_STEPS - 1) return obFinish();
   obGo(ob.step + 1);
 }
 function obGo(n) {
   const prevStep = ob.step;
-  ob.step = clamp(n, 0, 4);
+  ob.step = clamp(n, 0, OB_STEPS - 1);
   $$(".ob-step").forEach((s) => s.classList.toggle("hidden", +s.dataset.step !== ob.step));
   $("#obBack").classList.toggle("hidden", ob.step === 0);
-  $("#obNext").textContent = ob.step === 4 ? "Start" : "Continue";
-  $("#obBar").style.width = (ob.step + 1) * 20 + "%";
+  $("#obNext").textContent = ob.step === OB_STEPS - 1 ? "Start" : "Continue";
+  $("#obBar").style.width = ((ob.step + 1) / OB_STEPS) * 100 + "%";
   // Same fade/slide-up animation the tab views use, reused here for step
   // changes — void offsetWidth forces a reflow so re-adding the class
   // restarts the animation even when moving between steps rapidly.
@@ -552,6 +639,12 @@ const WHATS_NEW = {
     "Fixed long-pressing Profile or Targets to edit sometimes selecting text and popping the keyboard open.",
     "Fixed the What's New list running off the bottom of the screen on longer updates — it scrolls now.",
   ],
+  "3.2": [
+    "Training schedule — set a recurring weekly pattern (or rest days) on the Training tab, see the current week at a glance, and tap through to a full month view. Set it up during onboarding or edit it anytime in Training or Settings.",
+    "Custom workouts — save your own named workouts with an intensity level, usable in your training schedule.",
+    "Share custom foods and workouts with anyone else running FitTrack — export one as a file via the Share sheet, they import it from Settings and it's added straight to their library.",
+    "Goals: the progress bar and the time-remaining bar are now the same length, with days/months left shown directly on the bar, plus how many kg are left next to how many you've lost.",
+  ],
 };
 function showWhatsNewSheet(version) {
   const entry = WHATS_NEW[version];
@@ -585,6 +678,8 @@ function obFinish() {
   state.goals = ob.goals;
   state.weights.push({ d: todayKey(), ts: new Date().toISOString(), kg: w });
   if (ob.supplements.length) state.supplements = ob.supplements;
+  state.trainingSchedule = ob.schedule;
+  state.activeWorkoutIds = ob.activeWorkoutIds;
   state.settings.lastSeenVersion = APP_VERSION; // brand-new install — skip the What's New popup
   save();
   $("#onboarding").classList.add("hidden");
@@ -1283,10 +1378,11 @@ function renderFoodList() {
       <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${macroTags(f)}</div></div>
       <span class="fr-kcal">${r0(f.kcal)}</span>
       ${f.id ? `<span class="fav-btn ${fav ? "on" : ""}" data-fav="${f.id}">${fav ? "★" : "☆"}</span>` : ""}
-      ${sheetTab === "custom" ? `<span class="fav-btn" data-editc="${f.id}">✎</span><span class="fav-btn" data-delc="${f.id}">✕</span>` : ""}</button>`;
+      ${sheetTab === "custom" ? `<span class="fav-btn" data-sharec="${f.id}">↗</span><span class="fav-btn" data-editc="${f.id}">✎</span><span class="fav-btn" data-delc="${f.id}">✕</span>` : ""}</button>`;
   }).join("");
   $$("#foodList .food-row").forEach((el) => el.addEventListener("click", (e) => {
-    const fav = e.target.dataset.fav, del = e.target.dataset.delc, editc = e.target.dataset.editc;
+    const fav = e.target.dataset.fav, del = e.target.dataset.delc, editc = e.target.dataset.editc, sharec = e.target.dataset.sharec;
+    if (sharec) { const f = state.customFoods.find((x) => x.id === sharec); if (f) shareItem(`fittrack-food-${slugify(f.name)}.json`, { fittrackShare: "food", version: 1, food: { name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f } }, "FitTrack Food"); return; }
     if (editc) { openEditCustomFood(editc); return; }
     if (fav) { const ix = state.favs.indexOf(fav); ix >= 0 ? state.favs.splice(ix, 1) : state.favs.push(fav); save(); renderFoodList(); return; }
     if (del) { state.customFoods = state.customFoods.filter((c) => c.id !== del); save(); renderFoodList(); return; }
@@ -2153,7 +2249,113 @@ function renderTraining() {
     : "Nothing logged today yet — tap + to add an activity.";
   wireIndexDelete("#sessionList", (b) => { const l = state.logs[b.dataset.dk]; return l && l.walks; }, renderTraining);
   makeSwipeable($("#sessionList"));
+  renderScheduleWeek();
 }
+
+/* ---------- training schedule ---------- */
+function renderScheduleWeek() {
+  if (!state.activeWorkoutIds.length) {
+    $("#weekSchedRow").innerHTML = `<p class="muted" style="grid-column:1/-1">Training schedule not configured yet.</p>`;
+    return;
+  }
+  const dates = weekDatesFor(new Date());
+  const todayK = todayKey();
+  $("#weekSchedRow").innerHTML = dates.map((d) => {
+    const dk = dayKeyOf(d), info = scheduleDayInfo(dk), isToday = toKey(d) === todayK;
+    return `<div class="sched-day${isToday ? " today" : ""}">
+      <span class="sched-dow">${DAY_LABELS[dk]}</span>
+      <span class="sched-date">${d.getDate()}</span>
+      <span class="ic sched-ic${info.rest ? " rest" : ""}" data-ic="${info.ic}"></span>
+      <span class="sched-label">${esc(info.name)}</span>
+    </div>`;
+  }).join("");
+  renderIcons($("#weekSchedRow"));
+}
+let schedMonth = new Date();
+function renderScheduleMonth() {
+  $("#schedMonthLabel").textContent = schedMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const year = schedMonth.getFullYear(), month = schedMonth.getMonth();
+  const monStart = (state.settings.weekStart || "mon") === "mon";
+  const firstDow = new Date(year, month, 1).getDay();
+  const offset = monStart ? (firstDow + 6) % 7 : firstDow;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayK = todayKey();
+  const dows = monStart ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"];
+  let html = dows.map((d) => `<div class="cal-dow">${d}</div>`).join("");
+  for (let i = 0; i < offset; i++) html += `<div class="cal-cell empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d), dk = dayKeyOf(date), info = scheduleDayInfo(dk);
+    const isToday = toKey(date) === todayK;
+    html += `<div class="cal-cell static${isToday ? " today" : ""}">
+      <span class="cal-daynum">${d}</span>
+      <span class="ic sched-cell-ic${info.rest ? " rest" : ""}" data-ic="${info.ic}"></span>
+    </div>`;
+  }
+  $("#schedMonthGrid").innerHTML = html;
+  renderIcons($("#schedMonthGrid"));
+}
+$("#schedMonthPrev").addEventListener("click", () => { schedMonth.setMonth(schedMonth.getMonth() - 1); renderScheduleMonth(); });
+$("#schedMonthNext").addEventListener("click", () => { schedMonth.setMonth(schedMonth.getMonth() + 1); renderScheduleMonth(); });
+makeCardExpandable("#scheduleCard", () => { renderScheduleMonth(); $("#scheduleMonthSheet").classList.remove("hidden"); });
+wireSheetClose("scheduleMonthSheet", "scheduleMonthClose");
+
+// Deactivating (or deleting) a workout also clears it out of every day's
+// list — otherwise it'd linger as an invisible assignment with no way to see
+// or remove it once it's no longer offered as a choice.
+function unassignWorkout(id) {
+  for (const dk of DAY_KEYS) {
+    const arr = state.trainingSchedule[dk], idx = arr.indexOf(id);
+    if (idx >= 0) arr.splice(idx, 1);
+  }
+}
+function renderActiveWorkoutChips() {
+  $("#activeWorkoutChips").innerHTML = allWorkouts().map((w) =>
+    `<button data-id="${w.id}" class="${state.activeWorkoutIds.includes(w.id) ? "active" : ""}">${esc(w.name)}</button>`).join("");
+  $$("#activeWorkoutChips button").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.id, idx = state.activeWorkoutIds.indexOf(id);
+    if (idx >= 0) { state.activeWorkoutIds.splice(idx, 1); unassignWorkout(id); }
+    else state.activeWorkoutIds.push(id);
+    b.classList.toggle("active");
+    save(); renderScheduleEditRows(); renderScheduleWeek();
+  }));
+}
+function renderScheduleEditRows() {
+  const active = state.activeWorkoutIds.map(workoutById).filter(Boolean);
+  $("#scheduleEditRows").innerHTML = active.length
+    ? scheduleAssignRowsHTML(state.trainingSchedule, active)
+    : `<p class="muted">Pick at least one workout above to set which days it happens on.</p>`;
+  renderIcons($("#scheduleEditRows"));
+  wireScheduleAssign("#scheduleEditRows", state.trainingSchedule, () => { save(); renderScheduleWeek(); });
+}
+function renderWorkoutTemplateList() {
+  $("#workoutTemplateSection").classList.toggle("hidden", !state.workoutTemplates.length);
+  $("#workoutTemplateList").innerHTML = state.workoutTemplates.map((w) =>
+    `<li data-id="${w.id}"><span class="row-label"><span class="ic" data-ic="${w.ic}"></span>${esc(w.name)}</span>
+      <span style="display:flex;align-items:center">
+        <button class="fi-share" data-share="${w.id}"><span class="ic" data-ic="share"></span></button>
+        <button class="fi-del" data-id="${w.id}"><span class="ic" data-ic="x"></span></button>
+      </span></li>`).join("");
+  renderIcons($("#workoutTemplateList"));
+  $$("#workoutTemplateList .fi-del").forEach((b) => b.addEventListener("click", () => {
+    const id = b.dataset.id;
+    state.workoutTemplates = state.workoutTemplates.filter((w) => w.id !== id);
+    const i = state.activeWorkoutIds.indexOf(id);
+    if (i >= 0) state.activeWorkoutIds.splice(i, 1);
+    unassignWorkout(id);
+    save(); renderWorkoutTemplateList(); renderActiveWorkoutChips(); renderScheduleEditRows(); renderScheduleWeek();
+  }));
+  $$("#workoutTemplateList .fi-share").forEach((b) => b.addEventListener("click", () => {
+    const w = state.workoutTemplates.find((x) => x.id === b.dataset.share);
+    if (w) shareItem(`fittrack-workout-${slugify(w.name)}.json`, { fittrackShare: "workout", version: 1, workout: { name: w.name, ic: w.ic, met: w.met } });
+  }));
+}
+function openScheduleEdit() {
+  renderActiveWorkoutChips(); renderScheduleEditRows(); renderWorkoutTemplateList();
+  $("#scheduleMonthSheet").classList.add("hidden");
+  $("#scheduleEditSheet").classList.remove("hidden");
+}
+$("#scheduleEditBtn").addEventListener("click", openScheduleEdit);
+wireSheetClose("scheduleEditSheet", "scheduleEditClose", () => { $("#scheduleEditSheet").classList.add("hidden"); renderScheduleWeek(); });
 
 /* ---------- Progress ---------- */
 // Flags a stall: weight barely moved over the last 2 weeks despite the user
@@ -2214,7 +2416,9 @@ function goalCard(g) {
   // At the current weight-trend rate, when would this goal be reached?
   const daysToHit = (trend !== null && trend < 0 && cw > tgt) ? Math.ceil((cw - tgt) / -trend) : null;
   const projDate = daysToHit != null ? addDays(todayKey(), Math.min(daysToHit, 3650)) : null;
-  let dot = "n", pace = `${fmtDuration(daysLeft)} left`;
+  // No trend yet (too little weight history) — leave the pace slot blank
+  // rather than show a redundant "Xd left" that just repeats the time bar.
+  let dot = "", pace = "";
   if (cw <= tgt) { dot = "g"; pace = "Reached!"; }
   else if (trend !== null && daysLeft > 0) {
     const proj = cw + trend * daysLeft, diff = proj - tgt;
@@ -2224,19 +2428,17 @@ function goalCard(g) {
     else { dot = "r"; pace = `Behind (proj ${r1(proj)}kg)`; }
     if (projDate) pace += ` · ~${fmtShort(projDate)}`;
   }
-  // time bar: how much of the goal window has elapsed (grey, red near the end)
+  // time bar: how much of the goal window has elapsed (fill = remaining time,
+  // blue with 2+ weeks left, red inside the final 2 weeks)
   const windowDays = Math.max(1, daysBetween(g.created || p.startDate, date));
   const elapsedFrac = clamp(daysBetween(g.created || p.startDate, todayKey()) / windowDays, 0, 1);
-  const urgent = elapsedFrac >= 0.85 || daysLeft <= 7;
+  const nearDeadline = daysLeft <= 14;
   return `<div class="goal-card">
     <div class="goal-top"><span class="goal-name"><span class="ic ge" data-ic="target"></span>${esc(g.label)}</span><span class="goal-eta">by ${fmtShort(date)}</span></div>
     <div class="goal-nums"><span class="goal-cur">${r1(cw)}</span><span class="goal-arrow">→</span><span class="goal-tgt">${r1(tgt)} kg</span></div>
     <div class="goal-bar"><div class="goal-bar-fill" style="width:${pct * 100}%"></div></div>
-    <div class="goal-time-row">
-      <div class="goal-time-bar"><div class="goal-time-fill ${urgent ? "urgent" : ""}" style="width:${elapsedFrac * 100}%"></div></div>
-      <span class="goal-time-label ${urgent ? "urgent" : ""}">${fmtDuration(daysLeft)} left</span>
-    </div>
-    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost</span><span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span></div>
+    <div class="goal-time-bar"><div class="goal-time-fill ${nearDeadline ? "near-deadline" : ""}" style="width:${(1 - elapsedFrac) * 100}%"><span class="goal-time-label ${nearDeadline ? "near-deadline" : ""}">${fmtDuration(daysLeft)} left</span></div></div>
+    <div class="goal-foot"><span class="muted">${r1(Math.max(0, lost))} of ${r1(Math.max(0, need))} kg lost (${r1(Math.max(0, need - lost))} kg left)</span>${pace ? `<span class="goal-pace"><span class="pace-dot ${dot}"></span>${pace}</span>` : ""}</div>
   </div>`;
 }
 let goalsExpanded = false;
@@ -3244,8 +3446,9 @@ $("#profileSave").addEventListener("click", () => {
 });
 $("#setWeekStart").addEventListener("change", () => {
   state.settings.weekStart = $("#setWeekStart").value;
-  save();
+  save(); renderScheduleWeek();
 });
+$("#scheduleSettingsBtn").addEventListener("click", openScheduleEdit);
 // A reusable finger-tracking segmented slider: drag the thumb (or tap a label);
 // the value follows the finger and commits on release.
 function renderSlider(container, labels, index, onChange) {
@@ -3567,35 +3770,54 @@ $("#setHaptics").addEventListener("change", () => {
   save(); haptic();
 });
 
+function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "item"; }
 // A plain <a download> click is a no-op in the native WKWebView shell — there's
 // no browser download manager for it to hand off to, so the toast fired but
 // nothing ever reached the Files app. Native path writes the JSON to a temp
 // file via Filesystem then hands it to the OS share sheet (Share.share),
 // where "Save to Files" actually persists it; web/PWA keeps the old
 // blob-download since that genuinely works in a real browser tab.
-$("#exportBtn").addEventListener("click", async () => {
-  const filename = `fittrack-backup-${todayKey()}.json`;
-  const json = JSON.stringify(state, null, 2);
+async function shareItem(filename, obj, label) {
+  const json = JSON.stringify(obj, null, 2);
   if (isNativeApp() && window.capacitorFilesystem && window.capacitorShare) {
     try {
       const { Filesystem, Directory, Encoding } = window.capacitorFilesystem;
       const { Share } = window.capacitorShare;
       const { uri } = await Filesystem.writeFile({ path: filename, data: json, directory: Directory.Cache, encoding: Encoding.UTF8 });
-      await Share.share({ title: "FitTrack Backup", url: uri });
-      toast("Backup exported (photos not included)");
+      await Share.share({ title: label || "FitTrack", url: uri });
     } catch (e) {
-      toast("Export failed: " + (e.message || "error"));
+      toast("Share failed: " + (e.message || "error"));
     }
     return;
   }
   const blob = new Blob([json], { type: "application/json" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+$("#exportBtn").addEventListener("click", async () => {
+  await shareItem(`fittrack-backup-${todayKey()}.json`, state, "FitTrack Backup");
   toast("Backup exported (photos not included)");
 });
 $("#importInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
-  try { const data = JSON.parse(await file.text()); if (!data.profile || !data.logs) throw new Error("not a FitTrack backup"); if (!confirm("Replace ALL current data with this backup?")) return; localStorage.setItem(LS_KEY, JSON.stringify(data)); location.reload(); }
-  catch (err) { toast("Import failed: " + err.message); }
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.profile && data.logs) {
+      if (!confirm("Replace ALL current data with this backup?")) return;
+      localStorage.setItem(LS_KEY, JSON.stringify(data)); location.reload();
+    } else if (data.fittrackShare === "food" && data.food) {
+      const f = data.food;
+      state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
+      save(); renderFoodList();
+      toast(`Added "${f.name}" to your custom foods`);
+    } else if (data.fittrackShare === "workout" && data.workout) {
+      const w = data.workout;
+      state.workoutTemplates.push({ id: "wt" + Date.now(), name: w.name, ic: w.ic || "dumbbell", met: w.met || 6 });
+      save(); renderWorkoutTemplateList(); renderActiveWorkoutChips(); renderScheduleEditRows();
+      toast(`Added "${w.name}" to your workouts`);
+    } else {
+      throw new Error("not a FitTrack backup or shared item");
+    }
+  } catch (err) { toast("Import failed: " + err.message); }
   e.target.value = "";
 });
 $("#resetBtn").addEventListener("click", () => {

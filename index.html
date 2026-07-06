@@ -85,6 +85,14 @@
         <button class="btn ghost full" id="obSuppAdd">Add supplement</button>
       </section>
 
+      <section class="ob-step hidden" data-step="5">
+        <h2>Training schedule</h2>
+        <p class="ob-sub">Pick the workouts you do regularly, then tap the days each one happens on. Anything left blank stays a rest day — you can change this anytime in Training.</p>
+        <label class="field-label">Active workouts</label>
+        <div class="chips wrap" id="obActiveWorkoutChips"></div>
+        <div id="obScheduleRows" style="margin-top:14px"></div>
+      </section>
+
       <div class="ob-nav">
         <button id="obBack" class="btn ghost hidden">Back</button>
         <button id="obNext" class="btn primary">Continue</button>
@@ -208,6 +216,13 @@
     <!-- TRAINING -->
     <main id="view-training" class="view hidden">
       <header class="page-header"><h1>Training</h1></header>
+      <section class="card" id="scheduleCard">
+        <div class="card-head">
+          <h3><span class="ic t-blue" data-ic="calendar"></span>This week</h3>
+        </div>
+        <div class="week-sched" id="weekSchedRow"></div>
+        <p class="muted" style="margin-top:10px">Tap to see the full month or edit schedule.</p>
+      </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-green" data-ic="timer"></span>Interval timer</h3></div>
         <div class="segmented" id="timerModeSeg">
@@ -452,6 +467,7 @@
         </div>
         <label class="field-label" style="margin-top:10px">Week starts</label>
         <select id="setWeekStart"><option value="mon">Monday</option><option value="sun">Sunday</option></select>
+        <button class="btn ghost full" id="scheduleSettingsBtn" style="margin-top:10px">Edit training schedule</button>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="info"></span>Glossary</h3></div>
@@ -474,7 +490,7 @@
         <div class="card-head"><h3>Data</h3></div>
         <p class="muted" style="margin-bottom:10px">Your data lives only on this device and survives app updates.</p>
         <button class="btn ghost full" id="exportBtn">Export backup (JSON)</button>
-        <label class="btn ghost full" for="importInput">Import backup</label>
+        <label class="btn ghost full" for="importInput">Import backup or shared item</label>
         <input type="file" id="importInput" accept="application/json" hidden>
         <button class="btn danger full" id="resetBtn">Reset all data</button>
         <p class="muted center" id="versionInfo"></p>
@@ -722,6 +738,44 @@
       <input type="number" id="exMins" inputmode="numeric" value="30">
       <div class="macro-preview" id="exPreview" style="margin-top:14px"></div>
       <button class="btn primary full" id="exAdd">Add</button>
+    </div>
+  </div>
+
+  <!-- ===== Training schedule: month view ===== -->
+  <div id="scheduleMonthSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2>Training schedule</h2>
+        <button class="sheet-close" id="scheduleMonthClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="cal-nav">
+        <button class="day-nav" id="schedMonthPrev"><span class="ic" data-ic="chevL"></span></button>
+        <span id="schedMonthLabel" class="cal-month"></span>
+        <button class="day-nav" id="schedMonthNext"><span class="ic" data-ic="chevR"></span></button>
+      </div>
+      <div class="cal-grid" id="schedMonthGrid"></div>
+      <p class="muted" style="margin-top:10px">Your recurring weekly pattern, applied to every date.</p>
+      <button class="btn ghost full" id="scheduleEditBtn" style="margin-top:10px">Edit schedule</button>
+    </div>
+  </div>
+
+  <!-- ===== Training schedule: edit weekly pattern + workouts ===== -->
+  <div id="scheduleEditSheet" class="sheet hidden">
+    <div class="sheet-panel small">
+      <div class="sheet-head">
+        <h2>Edit training schedule</h2>
+        <button class="sheet-close" id="scheduleEditClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll">
+        <p class="field-label">Active workouts <span class="muted" style="font-weight:400">(from your Today's Activity / Recent sessions list)</span></p>
+        <div class="chips wrap" id="activeWorkoutChips"></div>
+        <p class="field-label" style="margin-top:16px">Weekly days <span class="muted" style="font-weight:400">(days left blank stay rest days)</span></p>
+        <div id="scheduleEditRows"></div>
+        <div id="workoutTemplateSection" class="hidden">
+          <p class="field-label" style="margin-top:16px">Your workouts</p>
+          <ul id="workoutTemplateList" class="entry-list"></ul>
+        </div>
+      </div>
     </div>
   </div>
 
