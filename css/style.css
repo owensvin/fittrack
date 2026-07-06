@@ -128,7 +128,7 @@ button { font: inherit; -webkit-user-select: none; user-select: none; touch-acti
 .ic { display: inline-flex; width: 18px; height: 18px; flex-shrink: 0; vertical-align: -3px; }
 .ic svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .t-green { color: var(--accent); } .t-blue { color: var(--blue); } .t-purple { color: var(--muted); }
-.t-amber { color: var(--amber); } .t-pink { color: var(--muted); } .t-red { color: var(--red); font-weight: 600; }
+.t-amber { color: var(--amber); } .t-pink { color: var(--muted); }
 
 input, select, textarea {
   font: inherit; color: var(--text);
@@ -396,15 +396,17 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 .goal-cur { font-size: var(--fs-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
 .goal-arrow { color: var(--muted2); }
 .goal-tgt { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
-.goal-bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+.goal-bar { height: 8px; background: var(--track); border-radius: 4px; overflow: visible; margin-bottom: 8px; position: relative; }
 .goal-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.4s var(--ease); }
-.goal-bar-fill.warn { background: var(--amber); }
-.goal-bar-fill.bad { background: var(--red); }
-/* Thin reference bar underneath: width = expected progress if on pace.
-   Compare its length to .goal-bar-fill above — grey peeking past the green
-   means behind schedule, green fully covering/exceeding it means on track. */
-.goal-pace-bar { height: 3px; border-radius: 2px; overflow: hidden; margin-bottom: 8px; background: var(--card2); }
-.goal-pace-fill { height: 100%; border-radius: 2px; background: var(--muted2); transition: width var(--t-med); }
+.goal-bar-pct { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: var(--fs-2xs); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
+.goal-time-bar {
+  height: 4px; border-radius: 2px; overflow: visible; margin-bottom: 8px; display: flex; justify-content: flex-end;
+  background: repeating-linear-gradient(135deg, var(--track) 0px, var(--track) 5px, var(--card2) 5px, var(--card2) 10px);
+}
+.goal-time-fill { height: 100%; border-radius: 2px; background: var(--blue); transition: width var(--t-med); display: flex; align-items: center; justify-content: center; position: relative; }
+.goal-time-fill.near-deadline { background: var(--red); }
+.goal-time-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: var(--fs-2xs); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.goal-time-label.near-deadline { font-weight: 700; }
 .goal-foot { display: flex; justify-content: space-between; font-size: var(--fs-xs); }
 .goal-pace { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .pace-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; }
