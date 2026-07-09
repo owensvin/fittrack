@@ -372,11 +372,33 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 .water-row { display: flex; align-items: center; gap: 10px; }
 /* One row always: drops shrink to fit instead of wrapping into a lopsided
    second line when the target needs more than ~8 of them. */
-.water-glasses { flex: 1; display: flex; gap: 4px; justify-content: center; flex-wrap: nowrap; min-width: 0; }
-.glass { flex: 1 1 0; max-width: 20px; min-width: 0; aspect-ratio: 1; height: auto; color: var(--muted2); transition: color var(--t-med); }
+.water-glasses { flex: 1; display: flex; align-items: center; gap: 4px; justify-content: center; flex-wrap: nowrap; min-width: 0; }
+/* display:flex (not inline span) so every drop sizes off aspect-ratio and
+   centers identically — inline baseline alignment left them at odd heights. */
+.glass { display: flex; align-items: center; justify-content: center; flex: 1 1 0; max-width: 20px; min-width: 0; aspect-ratio: 1; height: auto; color: var(--muted2); transition: color var(--t-med); }
 .glass svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .glass.full { color: var(--blue); }
 .glass.full svg { fill: var(--blue); fill-opacity: 0.22; }
+
+/* Supplement history strips */
+.supp-hist { margin-bottom: 18px; }
+.supp-hist-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.supp-strip { display: flex; gap: 2px; }
+.supp-dot { flex: 1 1 0; height: 16px; border-radius: 3px; background: var(--card2); }
+.supp-dot.on { background: var(--accent); }
+.supp-dot.today { box-shadow: inset 0 0 0 1px var(--text); }
+
+/* Notes: plain-text display until pressed */
+.note-display {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: var(--text); font-size: var(--fs-base); line-height: 1.45; padding: 2px 0;
+  cursor: pointer; white-space: pre-wrap; word-break: break-word;
+}
+.note-display.hidden { display: none; }
+
+/* Show all / Show less row at the foot of long entry lists */
+.list-toggle-row { display: flex; justify-content: center; padding: 4px 0 0; border-top: 1px solid var(--border); }
+.list-toggle { background: none; border: none; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; padding: 8px 14px; cursor: pointer; }
 
 /* ===== Since last meal ===== */
 .fast-row { display: flex; align-items: center; justify-content: space-between; }
@@ -417,6 +439,10 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
    at a time, so it must NOT stretch to 100% like every other chart's svg. */
 .chart .detail-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .chart .detail-scroll svg { width: auto; }
+/* Detailed Trend: the y-axis values sit in a pinned overlay on the right so
+   they stay put while the wide chart scrolls underneath. */
+.detail-wrap { position: relative; }
+.detail-axis { position: absolute; top: 0; right: 0; pointer-events: none; background: linear-gradient(90deg, transparent, var(--bg) 55%); }
 .legend { display: flex; gap: 14px; margin-top: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .lg::before { content: "●"; margin-right: 5px; }
 .dot-raw::before { color: var(--muted2); } .dot-ma::before { color: var(--ma-color, var(--accent)); } .dot-goal::before { color: var(--amber); }

@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.5";
+const APP_VERSION = "3.5.1";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -738,6 +738,17 @@ const WHATS_NEW = {
     "Redrawn icons for Activity, Supplements, Weight, and the walk/run figures.",
     "Fixed the water drops wrapping into a lopsided second row, Sleep & Steps misaligned double forms, the week strip cutting off Sunday, and \"avg deficit\" showing a confusing minus sign on what is already a deficit.",
   ],
+  "3.5.1": [
+    "Supplement history — tap the Supplements card for per-supplement 30-day adherence: taken/total, %, current streak, and a day-by-day strip.",
+    "Meal Gaps got real insights: how many times a day you eat (items within 30 min count as one sitting), your average overnight fast, average first/last meal, and a \"when you eat\" hour-of-day chart with your busiest hour highlighted.",
+    "Detailed Trend's y-axis now stays pinned while you scroll through history, and your goal selection on the weight page is remembered instead of resetting every open.",
+    "Activity History's All Sessions is now one week at a time with ‹ › paging (like the Progress Summary) instead of one endless list.",
+    "Every back-in-time control now stops at your first logged day — weekly/monthly summary paging and the training-schedule month view included.",
+    "Weight and Waist logs collapse to 5 rows with Show all / Show less.",
+    "Notes is now press-to-edit, so scrolling past it can't pop the keyboard open.",
+    "Water drops all sit on the same line now.",
+    "Apple Health: added an honest note in Settings — SideStore's free-account signing strips the HealthKit permission at install, so sync can't work under the current setup. Not a FitTrack bug; manual logging stays the reliable path.",
+  ],
 };
 function showWhatsNewSheet(version) {
   const entry = WHATS_NEW[version];
@@ -1058,20 +1069,40 @@ function renderToday() {
   renderWater(k);
   renderSupps(k);
   renderFasting();
-  $("#dayNote").value = (state.logs[k] && state.logs[k].note) || "";
+  renderNote(k);
 }
-// Day note autosaves as you type — keyed to the day being viewed when typing
-// started, so flipping days mid-debounce can't write to the wrong date.
+// Notes render as plain text; a press swaps in the textarea. This keeps a
+// stray scroll-tap from popping the keyboard open.
+function renderNote(k) {
+  const v = (state.logs[k] && state.logs[k].note) || "";
+  $("#dayNote").value = v;
+  $("#noteDisplay").innerHTML = v ? esc(v) : `<span class="muted">Press to add a note — mood, energy, context…</span>`;
+  $("#noteDisplay").classList.remove("hidden");
+  $("#dayNote").classList.add("hidden");
+}
+$("#noteDisplay").addEventListener("click", () => {
+  $("#noteDisplay").classList.add("hidden");
+  $("#dayNote").classList.remove("hidden");
+  $("#dayNote").focus();
+});
+// Autosaves as you type — keyed to the day being viewed when typing started,
+// so flipping days mid-debounce can't write to the wrong date.
 let noteSaveTimer = null;
+function saveNote(k) {
+  const v = $("#dayNote").value.trim();
+  const log = dayLog(k);
+  if (v) log.note = v; else delete log.note;
+  save();
+}
 $("#dayNote").addEventListener("input", () => {
   const k = viewDate;
   clearTimeout(noteSaveTimer);
-  noteSaveTimer = setTimeout(() => {
-    const v = $("#dayNote").value.trim();
-    const log = dayLog(k);
-    if (v) log.note = v; else delete log.note;
-    save();
-  }, 400);
+  noteSaveTimer = setTimeout(() => saveNote(k), 400);
+});
+$("#dayNote").addEventListener("blur", () => {
+  clearTimeout(noteSaveTimer);
+  saveNote(viewDate);
+  renderNote(viewDate);
 });
 $("#copyYesterdayBtn").addEventListener("click", () => {
   const prev = state.logs[addDays(viewDate, -1)];
@@ -1229,13 +1260,39 @@ function renderSupps(k) {
   $$("#suppList .sc-name .marquee-text").forEach(applyMarquee);
   const done = state.supplements.filter((s) => log.supps[s.id]).length;
   $("#suppCount").textContent = `${done} / ${state.supplements.length}`;
-  $$("#suppList .supp-chip").forEach((chip) => chip.addEventListener("click", () => {
+  $$("#suppList .supp-chip").forEach((chip) => chip.addEventListener("click", (e) => {
+    e.stopPropagation(); // toggling a chip shouldn't also open the history sheet
     const id = chip.dataset.sid;
     log.supps[id] = !log.supps[id];
     if (log.supps[id]) haptic("light");
     save(); renderSupps(viewDate);
   }));
 }
+/* ---------- supplement history ---------- */
+function renderSuppHistory() {
+  const days = []; for (let i = 29; i >= 0; i--) days.push(addDays(todayKey(), -i));
+  const taken = (dk, id) => { const l = state.logs[dk]; return !!(l && l.supps && l.supps[id]); };
+  let dayAll = 0;
+  if (state.supplements.length) days.forEach((dk) => { if (state.supplements.every((s) => taken(dk, s.id))) dayAll++; });
+  $("#suppHistStats").innerHTML = state.supplements.length
+    ? `<div class="stat-box"><div class="v">${dayAll}/30</div><div class="k">days all taken</div></div>
+       <div class="stat-box"><div class="v">${r0((dayAll / 30) * 100)}%</div><div class="k">full-day adherence</div></div>`
+    : "";
+  $("#suppHistList").innerHTML = state.supplements.length
+    ? state.supplements.map((s) => {
+        const takenDays = days.filter((dk) => taken(dk, s.id)).length;
+        let streak = 0, k = todayKey();
+        if (!taken(k, s.id)) k = addDays(k, -1); // today not ticked yet doesn't break the run
+        while (taken(k, s.id)) { streak++; k = addDays(k, -1); }
+        const strip = days.map((dk) => `<span data-tip="${fmtShort(dk)} · ${taken(dk, s.id) ? "taken" : "not taken"}" class="supp-dot ${taken(dk, s.id) ? "on" : ""}${dk === todayKey() ? " today" : ""}"></span>`).join("");
+        return `<div class="supp-hist">
+          <div class="supp-hist-head"><strong>${esc(s.name)}</strong><span class="muted">${takenDays}/30 · ${r0((takenDays / 30) * 100)}%${streak > 1 ? ` · ${streak}-day streak` : ""}</span></div>
+          <div class="supp-strip">${strip}</div></div>`;
+      }).join("") + `<p class="muted" style="margin-top:4px">Last 30 days, oldest on the left.</p>`
+    : `<p class="muted">Add supplements in Settings to track them here.</p>`;
+}
+makeCardExpandable("#suppCard", () => { renderSuppHistory(); $("#suppSheet").classList.remove("hidden"); });
+wireSheetClose("suppSheet", "suppHistClose");
 
 /* water / day nav */
 $("#waterPlus").addEventListener("click", () => { const l = dayLog(viewDate); l.waterMl = (l.waterMl || 0) + 250; save(); renderToday(); });
@@ -1260,10 +1317,17 @@ $("#calPrev").addEventListener("click", () => {
 });
 $("#calNext").addEventListener("click", () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
 // No point browsing before the user's first logged date — there's nothing there.
-function firstLoggedMonthKey() {
-  const p = state.profile;
-  return p && p.startDate ? p.startDate.slice(0, 7) : todayKey().slice(0, 7);
+// Earliest date with any data — the shared floor for every backwards
+// navigation (calendar, summary periods, schedule month, session weeks…).
+function firstDataKey() {
+  const candidates = [
+    state.profile && state.profile.startDate,
+    Object.keys(state.logs).sort()[0],
+    state.weights[0] && state.weights[0].d,
+  ].filter(Boolean).sort();
+  return candidates[0] || todayKey();
 }
+function firstLoggedMonthKey() { return firstDataKey().slice(0, 7); }
 function renderCalendar() {
   $("#calMonthLabel").textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const calMonthKey = `${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, "0")}`;
@@ -1372,9 +1436,51 @@ function renderMealGapsChart() {
   $("#mealGapsChart").innerHTML = gapCount
     ? `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${hourLines}${bars}<text x="${L}" y="${H - 7}" font-size="9" fill="var(--muted)">${fmtShort(dayKeys[0])}</text><text x="${W - R}" y="${H - 7}" text-anchor="end" font-size="9" fill="var(--muted)">today</text></svg>`
     : `<div class="food-empty">Log at least 2 meals to see gaps.</div>`;
+  // Eating-pattern insights over the same window. An "eating occasion" is a
+  // cluster of items logged within 30 min of each other — logging yogurt and
+  // a shake back-to-back is one sitting, not two.
+  const occHours = new Array(24).fill(0);
+  let occSum = 0, loggedDays = 0, firstSum = 0, lastSum = 0, nightSum = 0, nightCount = 0, prevLastTs = null;
+  for (const dk of dayKeys) {
+    const times = dayMealTimes(dk).sort((a, b) => a - b);
+    if (!times.length) { prevLastTs = null; continue; }
+    loggedDays++;
+    let prev = null;
+    for (const ts of times) {
+      if (prev == null || ts - prev > 30 * 60000) { occSum++; occHours[new Date(ts).getHours()]++; }
+      prev = ts;
+    }
+    const f = new Date(times[0]), l = new Date(times[times.length - 1]);
+    firstSum += f.getHours() * 60 + f.getMinutes();
+    lastSum += l.getHours() * 60 + l.getMinutes();
+    if (prevLastTs != null) { nightSum += (times[0] - prevLastTs) / 60000; nightCount++; }
+    prevLastTs = times[times.length - 1];
+  }
+  const peakHour = occHours.indexOf(Math.max(...occHours));
   $("#mealGapsStats").innerHTML = gapCount
-    ? `<div class="stat-box"><div class="v">${fmtHm(Math.round(gapSum / gapCount))}</div><div class="k">avg gap</div></div><div class="stat-box"><div class="v">${fmtHm(longest)}</div><div class="k">longest gap</div></div>`
+    ? `<div class="stat-box"><div class="v">${fmtHm(Math.round(gapSum / gapCount))}</div><div class="k">avg gap</div></div>
+       <div class="stat-box"><div class="v">${fmtHm(longest)}</div><div class="k">longest gap</div></div>
+       <div class="stat-box"><div class="v">${r1(occSum / loggedDays)}</div><div class="k">times you eat / day</div></div>
+       <div class="stat-box"><div class="v">${nightCount ? fmtHm(Math.round(nightSum / nightCount)) : "—"}</div><div class="k">avg overnight fast</div></div>
+       <div class="stat-box"><div class="v">${fmtTimeOfDay(firstSum / loggedDays)}</div><div class="k">avg first meal</div></div>
+       <div class="stat-box"><div class="v">${fmtTimeOfDay(lastSum / loggedDays)}</div><div class="k">avg last meal</div></div>`
     : "";
+  // 24-bin histogram of occasions; the busiest hour is highlighted.
+  const hasOcc = occSum > 0;
+  $("#mealHourLabel").classList.toggle("hidden", !hasOcc);
+  $("#mealHourHint").classList.toggle("hidden", !hasOcc);
+  if (hasOcc) {
+    const hW = 340, hH = 110, hL = 8, hR = 8, hT = 8, hB = 20;
+    const hMax = Math.max(...occHours, 1);
+    const bw = (hW - hL - hR) / 24, hg = Math.min(3, bw * 0.2);
+    const hBars = occHours.map((n, h) => {
+      if (!n) return "";
+      const bh = (n / hMax) * (hH - hT - hB);
+      return `<rect data-tip="${fmtTimeOfDay(h * 60)}–${fmtTimeOfDay(((h + 1) % 24) * 60)} · ${n} time${n === 1 ? "" : "s"}" x="${(hL + h * bw + hg / 2).toFixed(1)}" y="${(hH - hB - bh).toFixed(1)}" width="${(bw - hg).toFixed(1)}" height="${bh.toFixed(1)}" rx="2" fill="${h === peakHour ? "var(--accent)" : "var(--blue)"}" opacity="${h === peakHour ? 1 : 0.75}"/>`;
+    }).join("");
+    const hLabels = [0, 6, 12, 18].map((h) => `<text x="${(hL + h * bw).toFixed(1)}" y="${hH - 6}" font-size="9" fill="var(--muted)">${h === 0 ? "12am" : h === 12 ? "12pm" : h < 12 ? h + "am" : (h - 12) + "pm"}</text>`).join("");
+    $("#mealHourChart").innerHTML = `<svg viewBox="0 0 ${hW} ${hH}" xmlns="http://www.w3.org/2000/svg"><line x1="${hL}" y1="${hH - hB}" x2="${hW - hR}" y2="${hH - hB}" stroke="var(--border)"/>${hBars}${hLabels}</svg>`;
+  } else $("#mealHourChart").innerHTML = "";
   $$("#mealGapsRangeChips button").forEach((b) => b.classList.toggle("active", +b.dataset.d === mealGapsRange));
 }
 $("#mealGapsRangeChips").addEventListener("click", (e) => {
@@ -2479,26 +2585,33 @@ function renderActivityFull() {
   $("#activityTypeList").innerHTML = types.length
     ? types.map((t) => `<li><span class="row-label"><span class="ic" data-ic="${t.ic}"></span>${esc(t.name)} <span class="fi-qty">×${t.n}</span></span><span class="ing-right"><span class="d">${r0(t.kcal)} kcal</span></span></li>`).join("")
     : `<li class="muted" style="border-top:none">Nothing logged in the last 30 days.</li>`;
-  // Full history grouped by week, every row deletable.
-  const groups = [];
-  sessions.forEach((s) => {
-    const ws = weekStartKey(s.d);
-    let g = groups[groups.length - 1];
-    if (!g || g.ws !== ws) { g = { ws, rows: [] }; groups.push(g); }
-    g.rows.push(s);
-  });
-  const wkLabel = (ws) => ws === thisWeek ? "This week" : ws === addDays(thisWeek, -7) ? "Last week" : `${fmtShort(ws)} – ${fmtShort(addDays(ws, 6))}`;
-  $("#activityFullList").innerHTML = groups.length
-    ? groups.map((g) => `<p class="field-label" style="margin-top:14px">${wkLabel(g.ws)}</p>
-      <ul class="entry-list">${g.rows.map((s) =>
-        `<li><span class="row-label"><span class="ic" data-ic="${s.ic || exerciseIcon(s.name)}"></span>${esc(s.name)}${s.mins ? ` <span class="fi-qty">${s.mins} min</span>` : ""}</span>
-          <span class="ing-right"><span class="d">${s.d === todayKey() ? "Today" : fmtShort(s.d)} · ${r0(s.kcal)} kcal</span><button class="fi-del" data-dk="${s.d}" data-i="${s.idx}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")}</ul>`).join("")
-    : `<p class="muted">Activities and finished workouts you log will show up here.</p>`;
+  // One week at a time with ‹ › paging (same pattern as the Summary sheet)
+  // instead of the whole history as one endless list.
+  const wkStart = addDays(thisWeek, -7 * actWeekOffset), wkEnd = addDays(wkStart, 6);
+  const wkRows = sessions.filter((s) => s.d >= wkStart && s.d <= wkEnd);
+  const wkLabel = actWeekOffset === 0 ? "This week" : actWeekOffset === 1 ? "Last week" : `${fmtShort(wkStart)} – ${fmtShort(wkEnd)}`;
+  const wkKcal = wkRows.reduce((s, x) => s + (x.kcal || 0), 0);
+  $("#activityFullList").innerHTML = `
+    <div class="range-nav">
+      <button class="day-nav" id="actWkPrev"><span class="ic" data-ic="chevL"></span></button>
+      <span class="range-label">${wkLabel}</span>
+      <button class="day-nav" id="actWkNext"><span class="ic" data-ic="chevR"></span></button>
+    </div>
+    <ul class="entry-list">${wkRows.length ? wkRows.map((s) =>
+      `<li><span class="row-label"><span class="ic" data-ic="${s.ic || exerciseIcon(s.name)}"></span>${esc(s.name)}${s.mins ? ` <span class="fi-qty">${s.mins} min</span>` : ""}</span>
+        <span class="ing-right"><span class="d">${s.d === todayKey() ? "Today" : fmtShort(s.d)} · ${r0(s.kcal)} kcal</span><button class="fi-del" data-dk="${s.d}" data-i="${s.idx}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")
+      : `<li class="muted" style="border-top:none">No sessions this week.</li>`}</ul>
+    ${wkRows.length ? `<p class="muted" style="margin-top:8px">${r0(wkKcal)} kcal · ${wkRows.length} session${wkRows.length === 1 ? "" : "s"}</p>` : ""}`;
+  $("#actWkNext").disabled = actWeekOffset === 0;
+  $("#actWkPrev").disabled = wkStart <= weekStartKey(firstDataKey());
+  $("#actWkPrev").addEventListener("click", () => { actWeekOffset++; haptic("light"); renderActivityFull(); });
+  $("#actWkNext").addEventListener("click", () => { if (actWeekOffset > 0) { actWeekOffset--; haptic("light"); renderActivityFull(); } });
   renderIcons($("#activitySheet"));
   wireIndexDelete("#activityFullList", (b) => { const l = state.logs[b.dataset.dk]; return l && l.walks; }, () => { renderTraining(); renderToday(); renderActivityFull(); });
   $$("#activityFullList ul").forEach(makeSwipeable);
 }
-makeCardExpandable("#recentSessionsCard", () => { renderActivityFull(); $("#activitySheet").classList.remove("hidden"); });
+let actWeekOffset = 0;
+makeCardExpandable("#recentSessionsCard", () => { actWeekOffset = 0; renderActivityFull(); $("#activitySheet").classList.remove("hidden"); });
 wireSheetClose("activitySheet", "activityHistClose");
 
 /* ---------- training schedule ---------- */
@@ -2542,6 +2655,9 @@ let schedMonth = new Date();
 function renderScheduleMonth() {
   $("#schedMonthLabel").textContent = schedMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   const year = schedMonth.getFullYear(), month = schedMonth.getMonth();
+  // Backwards clamp matches the calendar; forward stays open — a schedule is
+  // for planning ahead.
+  $("#schedMonthPrev").disabled = `${year}-${String(month + 1).padStart(2, "0")}` <= firstLoggedMonthKey();
   const monStart = (state.settings.weekStart || "mon") === "mon";
   const firstDow = new Date(year, month, 1).getDay();
   const offset = monStart ? (firstDow + 6) % 7 : firstDow;
@@ -3140,12 +3256,13 @@ function detailedTrendChart({ entries, ma, pxPerDay, zoom }) {
   const dots = entries.map((e) => `<circle cx="${X(e.d).toFixed(1)}" cy="${Y(e.kg).toFixed(1)}" r="2.5" fill="var(--muted2)"/>`).join("");
   const rawPath = `<path d="${entries.map((e, i) => `${i ? "L" : "M"}${X(e.d).toFixed(1)},${Y(e.kg).toFixed(1)}`).join("")}" fill="none" stroke="var(--muted2)" stroke-width="1.2" opacity=".5"/>`;
   const maPath = `<path d="${smoothPathD(ma.map((m) => ({ x: X(m.d), y: Y(m.v) })))}" fill="none" stroke="var(--purple)" stroke-width="2.5" stroke-linecap="round"/>`;
-  // Y-axis on the right with 3 evenly spaced dashed gridlines, like the reference.
+  // Y-axis on the right with 3 evenly spaced dashed gridlines, like the
+  // reference. The value labels live in a separate pinned overlay (see the
+  // .detail-axis svg below) so the axis stays readable while the chart
+  // scrolls; only the lines are drawn into the wide scrolling svg.
   const gridVals = [vMax - pad, (vMin + vMax) / 2, vMin + pad];
-  const grid = gridVals.map((v) => {
-    const y = Y(v).toFixed(1);
-    return `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${(W - R + 6).toFixed(1)}" y="${(+y + 3).toFixed(1)}" font-size="9" fill="var(--muted)">${r1(v)}</text>`;
-  }).join("");
+  const grid = gridVals.map((v) => `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W}" y2="${Y(v).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3"/>`).join("");
+  const axisTexts = gridVals.map((v) => `<text x="8" y="${(Y(v) + 3).toFixed(1)}" font-size="9" fill="var(--muted)">${r1(v)}</text>`).join("");
   // Full x-axis, always labelled by actual date (not just day-of-week, which
   // repeats every 7 days and stops meaning anything once you've scrolled a
   // few weeks back) — every day in Week zoom, every 5th day in Month zoom
@@ -3153,14 +3270,20 @@ function detailedTrendChart({ entries, ma, pxPerDay, zoom }) {
   let dayLabels = "";
   const step = zoom === "month" ? 5 : 1;
   for (let i = 0; i <= totalDays; i += step) { const dk = addDays(x0, i); dayLabels += `<text x="${X(dk).toFixed(1)}" y="${H - 7}" font-size="8" fill="var(--muted)" text-anchor="middle">${fmtShort(dk)}</text>`; }
-  return `<div class="detail-scroll" id="weightDetailScroll"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
-    ${grid}${dayLabels}${rawPath}${maPath}${dots}</svg></div>`;
+  return `<div class="detail-wrap"><div class="detail-scroll" id="weightDetailScroll"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
+    ${grid}${dayLabels}${rawPath}${maPath}${dots}</svg></div><svg class="detail-axis" viewBox="0 0 40 ${H}" width="40" height="${H}" xmlns="http://www.w3.org/2000/svg">${axisTexts}</svg></div>`;
 }
 function renderWeightFull() {
   const fullMa = movingAvg(state.weights);
   const sortedGoals = [...state.goals].sort((a, b) => (a.date < b.date ? -1 : 1));
-  // Default to showing every goal the first time this opens.
-  if (!weightFullGoalIds) weightFullGoalIds = new Set(sortedGoals.map((g) => g.id));
+  // Restore the last goal selection across app restarts; stale ids (deleted
+  // goals) are dropped, and a selection that matched nothing falls back to
+  // "show all". An intentionally-emptied selection stays empty.
+  if (!weightFullGoalIds) {
+    const saved = uiPrefs.weightFullGoalIds;
+    weightFullGoalIds = new Set(Array.isArray(saved) ? saved.filter((id) => state.goals.some((g) => g.id === id)) : sortedGoals.map((g) => g.id));
+    if (Array.isArray(saved) && saved.length && !weightFullGoalIds.size) weightFullGoalIds = new Set(sortedGoals.map((g) => g.id));
+  }
   const shownGoals = sortedGoals.filter((g) => weightFullGoalIds.has(g.id));
   const isDetailed = weightFullMode === "trend";
   $("#weightFullGoalSection").classList.toggle("hidden", isDetailed);
@@ -3251,6 +3374,7 @@ $("#weightDetailZoomSeg").addEventListener("click", (e) => {
 $("#weightFullGoalChips").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b || !b.dataset.id) return;
   weightFullGoalIds.has(b.dataset.id) ? weightFullGoalIds.delete(b.dataset.id) : weightFullGoalIds.add(b.dataset.id);
+  setPref("weightFullGoalIds", [...weightFullGoalIds]);
   renderWeightFull();
 });
 function renderWaistChart() {
@@ -3665,6 +3789,8 @@ function renderSummaryFull() {
   const startKey = addDays(endKey, -(days - 1));
   $("#sumRangeLabel").textContent = `${fmtShort(startKey)} – ${fmtShort(endKey)}`;
   $("#sumNext").disabled = sumFullOffset === 0;
+  // Same floor as the calendar: no paging back past the first data.
+  $("#sumPrev").disabled = startKey <= firstDataKey();
   const calPts = [], weightPts = [];
   let kcalSum = 0, kcalDays = 0;
   for (let i = days - 1; i >= 0; i--) {
@@ -3737,13 +3863,18 @@ function renderBody() {
   renderIcons($("#bodySummary"));
   const recentCutoff = addDays(todayKey(), -1);
   const recentW = state.weights.filter((w) => w.d >= recentCutoff).reverse();
-  $("#weightList").innerHTML = recentW.length
-    ? recentW.map((w) =>
-      `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${w.d === todayKey() ? "Today" : fmtShort(w.d)}${w.ts ? " · " + fmtTime(w.ts) : ""}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("")
+  const wRows = recentW.map((w) =>
+    `<li><span>${w.kg} kg</span><span class="ing-right"><span class="d">${w.d === todayKey() ? "Today" : fmtShort(w.d)}${w.ts ? " · " + fmtTime(w.ts) : ""}</span><button class="fi-del" data-wts="${w.ts || w.d}"><span class="ic" data-ic="x"></span></button></span></li>`);
+  $("#weightList").innerHTML = wRows.length
+    ? collapseRows(wRows, "weight")
     : `<li class="muted" style="border-top:none">No weigh-in in the last 2 days — full history is on Progress.</li>`;
-  $("#waistList").innerHTML = [...state.waists].reverse().slice(0, 8).map((w) =>
-    `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`).join("");
+  const cRows = [...state.waists].reverse().map((w) =>
+    `<li><span>${w.cm} cm</span><span class="ing-right"><span class="d">${fmtShort(w.d)}</span><button class="fi-del" data-cd="${w.d}"><span class="ic" data-ic="x"></span></button></span></li>`);
+  $("#waistList").innerHTML = collapseRows(cRows, "waist");
   renderIcons($("#weightList")); renderIcons($("#waistList"));
+  $$("#weightList .list-toggle, #waistList .list-toggle").forEach((b) => b.addEventListener("click", () => {
+    listExpand[b.dataset.lt] = !listExpand[b.dataset.lt]; renderBody();
+  }));
   $$("#weightList .fi-del").forEach((b) => b.addEventListener("click", () => {
     state.weights = state.weights.filter((w) => (w.ts || w.d) !== b.dataset.wts);
     save(); renderBody(); toast("Weight entry removed");
@@ -3755,6 +3886,15 @@ function renderBody() {
   makeSwipeable($("#weightList")); makeSwipeable($("#waistList"));
   renderSleepSteps();
   renderPhotos();
+}
+// Long entry lists collapse to 5 rows with a Show all / Show less toggle so
+// the card stays a card instead of a scroll of history.
+const listExpand = { weight: false, waist: false };
+function collapseRows(rows, key) {
+  if (rows.length <= 5) return rows.join("");
+  const expanded = listExpand[key];
+  const shown = expanded ? rows : rows.slice(0, 5);
+  return shown.join("") + `<li class="list-toggle-row"><button class="list-toggle" data-lt="${key}">${expanded ? "Show less" : `Show all (${rows.length})`}</button></li>`;
 }
 // Rough energy from steps, scaled by bodyweight (~0.0005 kcal · step⁻¹ · kg⁻¹).
 function stepKcal(steps) { return r0(steps * currentWeight() * 0.0005); }

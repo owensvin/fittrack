@@ -163,15 +163,17 @@
       </section>
 
       <!-- Supplements -->
-      <section class="card">
+      <section class="card expandable-card" id="suppCard">
         <div class="card-head"><h3><span class="ic t-pink" data-ic="pill"></span>Supplements</h3><span id="suppCount" class="muted"></span></div>
         <div id="suppList" class="supp-grid"></div>
+        <p class="muted" style="margin-top:10px">tap card for history</p>
       </section>
 
-      <!-- Day note -->
+      <!-- Day notes -->
       <section class="card" id="noteCard">
-        <div class="card-head"><h3><span class="ic t-purple" data-ic="pencil"></span>Note</h3></div>
-        <textarea id="dayNote" rows="2" placeholder="Anything worth remembering about this day — mood, energy, a birthday dinner…"></textarea>
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="pencil"></span>Notes</h3></div>
+        <button class="note-display" id="noteDisplay"></button>
+        <textarea id="dayNote" rows="2" class="hidden" placeholder="Anything worth remembering about this day — mood, energy, a birthday dinner…"></textarea>
       </section>
 
       <!-- Since last meal -->
@@ -439,6 +441,7 @@
       <section class="card">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="heart"></span>Apple Health</h3></div>
         <p class="muted" id="healthUnavailNote" style="margin-bottom:10px">Read-only — FitTrack never writes to Health. Pulls in new data each time you open the app.</p>
+        <p class="muted" style="margin-bottom:10px">⚠️ Known limitation: SideStore's free-account signing strips the HealthKit permission when it installs the app, so iOS refuses Health access no matter what you toggle here. This isn't fixable from inside FitTrack — it needs SideStore to support the HealthKit entitlement (or a paid Apple Developer account with proper signing). Manual logging below is the reliable path for now.</p>
         <div class="switch-row">
           <div><div class="switch-title">Weight</div><div class="muted">From your smart scale or any Health-connected app</div></div>
           <label class="switch"><input type="checkbox" id="setHealthWeight"><span class="knob"></span></label>
@@ -1000,6 +1003,9 @@
         </div>
         <div id="mealGapsChart" class="chart"></div>
         <div class="stat-grid" id="mealGapsStats" style="margin-top:12px"></div>
+        <p class="field-label" id="mealHourLabel">When you eat</p>
+        <p class="muted" style="margin-bottom:8px" id="mealHourHint">Eating occasions by hour of day — items logged within 30 min count as one sitting.</p>
+        <div id="mealHourChart" class="chart"></div>
         <div style="height:24px"></div>
       </div>
     </div>
@@ -1021,6 +1027,21 @@
         <div class="stat-grid" id="sleepStats"></div>
         <p class="field-label">Recent</p>
         <ul id="sleepStepsList" class="entry-list"></ul>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supplement history (full screen) -->
+  <div id="suppSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Supplement History</h2>
+        <button class="sheet-close" id="suppHistClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <div class="stat-grid" id="suppHistStats" style="margin-bottom:14px"></div>
+        <div id="suppHistList"></div>
         <div style="height:24px"></div>
       </div>
     </div>
