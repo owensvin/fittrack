@@ -113,6 +113,7 @@
         </div>
         <button class="day-nav" id="dayNext"><span class="ic" data-ic="chevR"></span></button>
       </header>
+      <button class="back-today hidden" id="backTodayBtn"><span class="ic" data-ic="chevR"></span>Return to today</button>
 
       <!-- Rings -->
       <section class="hero">
@@ -167,6 +168,12 @@
         <div id="suppList" class="supp-grid"></div>
       </section>
 
+      <!-- Day note -->
+      <section class="card" id="noteCard">
+        <div class="card-head"><h3><span class="ic t-purple" data-ic="pencil"></span>Note</h3></div>
+        <textarea id="dayNote" rows="2" placeholder="Anything worth remembering about this day — mood, energy, a birthday dinner…"></textarea>
+      </section>
+
       <!-- Since last meal -->
       <section class="card expandable-card" id="mealGapsCard">
         <div class="card-head"><h3><span class="ic t-purple" data-ic="timer"></span>Time since last meal</h3></div>
@@ -184,6 +191,10 @@
       <header class="page-header"><h1>Progress</h1></header>
       <section class="card" id="weekCard"></section>
       <section class="card hidden" id="plateauCard"></section>
+      <h2 class="section-label hidden" id="insightsLabel">Insights</h2>
+      <section class="card hidden" id="focusCard"></section>
+      <section class="card hidden" id="insightsCard"></section>
+      <section class="card" id="heatmapCard"></section>
       <h2 class="section-label">Goals</h2>
       <section id="goalCards"></section>
       <h2 class="section-label">Logging history</h2>
@@ -265,13 +276,14 @@
         <p class="muted" id="timerHint" style="margin-top:6px">EMOM: start a new set every interval — rest with whatever time is left.</p>
         <button class="btn primary full" id="timerStart">Start</button>
       </section>
-      <section class="card">
+      <section class="card expandable-card" id="recentSessionsCard">
         <div class="card-head">
           <h3><span class="ic t-amber" data-ic="dumbbell"></span>Recent sessions</h3>
           <button class="add-btn" id="trainExerciseAddBtn"><span class="ic" data-ic="plus"></span></button>
         </div>
+        <p class="muted" id="trainExerciseSummary" style="margin:-4px 0 2px"></p>
         <ul class="entry-list" id="sessionList"></ul>
-        <p class="muted" id="trainExerciseSummary" style="margin-top:8px"></p>
+        <p class="muted" style="margin-top:10px">tap card for full history</p>
       </section>
       <div class="bottom-space"></div>
     </main>
@@ -304,19 +316,15 @@
         <div class="card-head"><h3><span class="ic t-blue" data-ic="moon"></span>Sleep &amp; steps</h3></div>
         <p class="muted" style="margin:-4px 0 10px">tap card for history</p>
         <div class="dual-entry">
-          <div class="de-field">
-            <label class="field-label"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
-            <div class="entry-row">
-              <input type="number" id="sleepInput" inputmode="decimal" step="0.5" placeholder="7.5">
-              <button class="btn primary" id="sleepSave">Log</button>
-            </div>
+          <div class="entry-row labeled">
+            <label class="field-label" for="sleepInput"><span class="ic" data-ic="moon"></span> Sleep (hrs)</label>
+            <input type="number" id="sleepInput" inputmode="decimal" step="0.5" placeholder="7.5">
+            <button class="btn primary" id="sleepSave">Log</button>
           </div>
-          <div class="de-field">
-            <label class="field-label"><span class="ic" data-ic="walk"></span> Steps</label>
-            <div class="entry-row">
-              <input type="number" id="stepsInput" inputmode="numeric" placeholder="8000">
-              <button class="btn primary" id="stepsSave">Log</button>
-            </div>
+          <div class="entry-row labeled">
+            <label class="field-label" for="stepsInput"><span class="ic" data-ic="walk"></span> Steps</label>
+            <input type="number" id="stepsInput" inputmode="numeric" placeholder="8000">
+            <button class="btn primary" id="stepsSave">Log</button>
           </div>
         </div>
         <div class="stat-grid" id="sleepStepsSummary" style="margin-top:12px"></div>
@@ -491,6 +499,7 @@
         <div class="card-head"><h3>Data</h3></div>
         <p class="muted" style="margin-bottom:10px">Your data lives only on this device and survives app updates.</p>
         <button class="btn ghost full" id="exportBtn">Export backup (JSON)</button>
+        <button class="btn ghost full" id="exportCsvBtn">Export spreadsheet (CSV)</button>
         <label class="btn ghost full" for="importInput">Import backup or shared item</label>
         <input type="file" id="importInput" accept="application/json" hidden>
         <button class="btn danger full" id="resetBtn">Reset all data</button>
@@ -879,7 +888,7 @@
         </div>
         <div class="trend-hero">
           <div><span class="th-lab">Average</span><span class="th-val" id="trendAvg">—</span></div>
-          <div><span class="th-lab">Difference</span><span class="th-val" id="trendDiff">—</span></div>
+          <div><span class="th-lab">Trend over range</span><span class="th-val" id="trendDiff">—</span></div>
         </div>
         <div class="chips" id="trendRangeChips">
           <button data-d="7">1W</button>
@@ -1012,6 +1021,27 @@
         <div class="stat-grid" id="sleepStats"></div>
         <p class="field-label">Recent</p>
         <ul id="sleepStepsList" class="entry-list"></ul>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity history (full screen) -->
+  <div id="activitySheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Activity History</h2>
+        <button class="sheet-close" id="activityHistClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll" style="max-height:none;flex:1 1 auto">
+        <p class="field-label">Calories burned per week</p>
+        <div id="activityWeekChart" class="chart"></div>
+        <p class="field-label">Last 30 days</p>
+        <div class="stat-grid" id="activityStats"></div>
+        <p class="field-label">By activity — last 30 days</p>
+        <ul id="activityTypeList" class="entry-list"></ul>
+        <p class="field-label">All sessions</p>
+        <div id="activityFullList"></div>
         <div style="height:24px"></div>
       </div>
     </div>
