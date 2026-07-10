@@ -640,6 +640,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 #scanFileReader { display: none; }
 
 /* ===== Qty sheet ===== */
+.serving-weight-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: var(--fs-sm); }
+.serving-weight-row label { color: var(--muted); flex-shrink: 0; }
+.serving-weight-row input { width: 90px; text-align: center; }
 .qty-row { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
 .qty-btn { width: 44px; height: 44px; border-radius: var(--r-md); border: none; background: var(--card2); color: var(--text); font-size: 1.4rem; cursor: pointer; flex-shrink: 0; }
 .qty-row input { text-align: center; font-size: var(--fs-lg); font-weight: 600; }
@@ -702,6 +705,22 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .hm-lg-off::before { color: var(--card2); }
 
 .rec-sub { color: var(--muted2); font-size: var(--fs-2xs); }
+
+/* ===== Backup nudge ===== */
+.backup-banner { border-color: var(--amber); }
+.backup-row { display: flex; gap: 10px; align-items: flex-start; }
+.backup-row .ic { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; }
+.backup-row p { font-size: var(--fs-sm); line-height: 1.45; }
+.backup-actions { display: flex; gap: 8px; margin-top: 12px; }
+.backup-actions .btn { flex: 1; }
+
+/* ===== Goal celebration ===== */
+.celebrate-scroll { text-align: center; }
+.celebrate-hero { width: 96px; height: 96px; margin: 20px auto 8px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+.celebrate-hero .ic { width: 52px; height: 52px; color: var(--bg); }
+.celebrate-hero .ic svg { stroke-width: 3; }
+.celebrate-name { font-size: var(--fs-2xl); font-weight: 800; letter-spacing: -0.5px; margin-top: 8px; }
+.celebrate-target { color: var(--muted); margin: 6px 0 20px; }
 
 /* ===== Weekly challenge ===== */
 .challenge-row { display: flex; align-items: center; gap: 12px; }

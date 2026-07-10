@@ -126,6 +126,30 @@
         <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button>
       </div>
 
+      <!-- Backup nudge (only when stale) -->
+      <section class="card backup-banner hidden" id="backupBanner">
+        <div class="backup-row">
+          <span class="ic t-amber" data-ic="bell"></span>
+          <p id="backupBannerText"></p>
+        </div>
+        <div class="backup-actions">
+          <button class="btn small" id="backupNowBtn">Back up now</button>
+          <button class="btn small ghost" id="backupLaterBtn">Later</button>
+        </div>
+      </section>
+
+      <!-- One-time orientation card -->
+      <section class="card hidden" id="tourCard">
+        <div class="card-head"><h3><span class="ic t-blue" data-ic="sparkle"></span>Finding your way around</h3></div>
+        <ul class="insight-list">
+          <li><span class="ic t-amber" data-ic="chart"></span><span><b>Progress</b> now works for you — Insights spot your patterns, Focus picks the one thing worth fixing, and the Adherence calendar shows your month at a glance.</span></li>
+          <li><span class="ic t-green" data-ic="target"></span><span>Below is your <b>weekly challenge</b> — one concrete goal, picked from your own numbers and reset every week.</span></li>
+          <li><span class="ic t-purple" data-ic="timer"></span><span>Cards that say <b>"tap card for history"</b> open a full screen with charts and every entry.</span></li>
+          <li><span class="ic t-blue" data-ic="info"></span><span>Any ⓘ explains how a number is calculated — the full list lives in Settings → Glossary.</span></li>
+        </ul>
+        <button class="btn ghost full" id="tourDismiss" style="margin-top:12px">Got it</button>
+      </section>
+
       <!-- Weekly challenge -->
       <section class="card" id="challengeCard"></section>
 
@@ -487,6 +511,7 @@
       <section class="card">
         <div class="card-head"><h3>Data</h3></div>
         <p class="muted" style="margin-bottom:10px">Your data lives only on this device and survives app updates.</p>
+        <p class="muted" id="backupInfo" style="margin-bottom:10px"></p>
         <button class="btn ghost full" id="exportBtn">Export backup (JSON)</button>
         <button class="btn ghost full" id="exportCsvBtn">Export spreadsheet (CSV)</button>
         <label class="btn ghost full" for="importInput">Import backup or shared item</label>
@@ -590,6 +615,11 @@
         <button data-val="serv" class="active">Servings</button>
         <button data-val="g">Grams</button>
         <button data-val="ml">ml</button>
+      </div>
+      <div class="serving-weight-row hidden" id="detailServingWeightRow">
+        <label for="detailServingWeight">1 serving =</label>
+        <input type="number" id="detailServingWeight" inputmode="decimal" min="1" step="1" placeholder="weight">
+        <span class="muted" id="detailServingWeightUnit">g</span>
       </div>
       <div class="qty-row">
         <button class="qty-btn" id="qtyMinus">−</button>
@@ -1013,6 +1043,25 @@
         <div class="stat-grid" id="sleepStats"></div>
         <p class="field-label">Recent</p>
         <ul id="sleepStepsList" class="entry-list"></ul>
+        <div style="height:24px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goal reached celebration (full screen) -->
+  <div id="goalCelebrateSheet" class="sheet hidden">
+    <div class="sheet-panel full">
+      <div class="sheet-head">
+        <h2>Goal reached</h2>
+        <button class="sheet-close" id="goalCelebrateClose"><span class="ic" data-ic="x"></span></button>
+      </div>
+      <div class="sheet-scroll celebrate-scroll" style="max-height:none;flex:1 1 auto">
+        <div class="celebrate-hero"><span class="ic" data-ic="check"></span></div>
+        <h3 class="celebrate-name" id="celebrateName"></h3>
+        <p class="celebrate-target" id="celebrateTarget"></p>
+        <div class="stat-grid" id="celebrateStats"></div>
+        <button class="btn ghost full" id="celebrateShareBtn" style="margin-top:16px">Share as image</button>
+        <button class="btn primary full" id="celebrateKeepBtn" style="margin-top:10px">Keep going</button>
         <div style="height:24px"></div>
       </div>
     </div>

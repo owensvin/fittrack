@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.6";
+const APP_VERSION = "3.7";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -307,13 +307,15 @@ function defaultState() {
     customFoods: [], favs: [], recents: [],
     goals: [],
     challenge: null, // {weekKey, id} — this week's auto-picked challenge
+    pendingCelebration: null, // goal id whose "reached" sheet hasn't been dismissed yet
+    foodServingOverrides: {}, // foodId/name -> grams, so any food can toggle serv/g/ml
     supplements: defaultSupplements(),
     workoutTemplates: [],
     activeWorkoutIds: [],
     trainingSchedule: defaultTrainingSchedule(),
     trainingBreak: null, // {from, until} date-key range; overrides the weekly pattern without editing it
     workoutNotifs: {}, // workoutId -> {enabled, time}
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, tourDismissed: false, lastBackup: null, backupSnoozeUntil: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -334,6 +336,12 @@ function loadState() {
       if (!s.settings.timer.program) s.settings.timer.program = [];
       if (!s.settings.weeklyReview) s.settings.weeklyReview = { enabled: false };
       if (s.settings.lastSeenVersion === undefined) s.settings.lastSeenVersion = null;
+      if (s.settings.tourDismissed === undefined) s.settings.tourDismissed = false;
+      if (s.settings.lastBackup === undefined) s.settings.lastBackup = null;
+      if (s.settings.backupSnoozeUntil === undefined) s.settings.backupSnoozeUntil = null;
+      if (s.challenge === undefined) s.challenge = null;
+      if (s.pendingCelebration === undefined) s.pendingCelebration = null;
+      if (!s.foodServingOverrides) s.foodServingOverrides = {};
       if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
       if (s.profile && s.profile.targetDeficit == null) {
         const pr = s.profile, wt = (s.weights && s.weights.length) ? s.weights[s.weights.length - 1].kg : pr.startWeightKg;
@@ -445,6 +453,11 @@ const GLOSSARY = {
   streak: { title: "Streak & adherence", body: "There are two streaks: the flame is your logging streak — consecutive days you logged anything at all. The target icon is your on-target streak — consecutive days you also stayed under your calorie budget. Missing your target doesn't break the logging streak, and vice versa. Adherence % (in the Summary) is just days logged ÷ days in that period — it only needs you to show up, not hit target." },
   bmi: { title: "BMI", body: "Body Mass Index — weight (kg) ÷ height (m)². A rough population-level screening number, not a precise measure of body composition (it can't tell fat from muscle). Standard bands: under 18.5 Underweight, 18.5–24.9 Normal, 25–29.9 Overweight, 30+ Obese. Updates automatically from your latest weigh-in." },
   expenditure: { title: "Adaptive expenditure (TDEE)", body: "Your real daily energy burn, worked out from energy balance rather than a formula: it takes the calories you've actually logged over the last couple of weeks and adds the energy behind your weight-trend change (about 7700 kcal per kg). If your weight is dropping faster than your intake alone explains, you're burning more than a BMR×activity estimate assumes — so this number is more accurate, and it re-tunes itself as you keep logging. The suggested target is simply this expenditure minus the deficit from your chosen Pace, so it always respects how aggressive you want to be. It needs about 2 weeks of food + weight logging before it can show." },
+  insights: { title: "Insights & Focus", body: "Patterns are computed straight from your last 4 weeks of logs — no AI, no guesswork: which weekday runs hottest, weekends vs weekdays, how often you hit protein, your usual eating window, how consistent your intake is, and whether short sleep nudges you to eat more. \"Focus this week\" picks the single change with the most leverage, in strict priority order: logging gaps first (nothing else is trustworthy without data), then weekend overshoot, then a problem weekday, then protein, then late-night eating. Fix the top one and the next appears." },
+  heatmap: { title: "Adherence calendar", body: "One cell per day: green means you logged and stayed under your calorie budget, amber means you logged but went over, dim means nothing was logged. It's the honest month view — a wall of green with a few ambers is winning; lots of dim days means the problem is logging, not eating. Tap any day to open it on Today." },
+  challenge: { title: "Weekly challenge", body: "One concrete, countable goal per week, picked automatically from your own weak spot (same logic as Focus) — log daily, hold the weekend, hit protein 5 times, close the kitchen by 9:30, or stay on target 5 days. It's locked in when the week starts, so it won't change under you mid-week. The bar fills as days qualify." },
+  records: { title: "Records", body: "All-time bests computed from your actual logs: longest streaks, best week, biggest 7-day trend drop, longest overnight fast, most active week. They only ever go up — a bad week can't take a record away, it just doesn't set one." },
+  recap: { title: "Monthly recap", body: "Each month's story in six numbers: weight trend (from the smoothed 7-day average, not single weigh-ins), days logged, days on target, average deficit, workouts, and calories burned. Use ‹ › to browse past months, and \"Share as image\" to render it as a clean card you can send or save." },
 };
 // Shared BMI band → color mapping, used by both the gauge visual and the
 // plain-text category label wherever it's shown, so they always agree.
@@ -753,6 +766,12 @@ const WHATS_NEW = {
     "Records on Progress — all-time bests straight from your data: longest on-target and logging streaks, best week, biggest 7-day trend drop, longest overnight fast, most active week. No badges, no confetti — just receipts.",
     "Monthly recap on Progress — each month's weight trend, logging, on-target days, deficit, and workouts, browsable month by month, with a \"Share as image\" button that renders a clean recap card for sending or saving.",
     "Apple Health is gone. The honest version: SideStore's free-account signing strips the HealthKit permission at install time, so the sync could never actually run on your phone — the toggles were dead weight. Removed rather than left there looking broken. If SideStore adds HealthKit support upstream, it can come back.",
+  ],
+  "3.7": [
+    "Servings / Grams / ml now works for every food, not just barcode scans. If a food doesn't carry a serving weight, a \"1 serving = __\" field appears when you switch to grams or ml — enter it once and it's remembered for that food from then on.",
+    "Goal reached! Hitting a goal now gets a real moment — a full-screen celebration with how much you lost, how long it took, and your average pace, plus a \"Share as image\" card. It waits for you if a late weigh-in crosses the line while the app's closed.",
+    "Backup reminders — your data lives only on this phone, so FitTrack now nudges you to export a copy when you've never backed up or it's been over 45 days. Settings shows when you last backed up. Dismissable, never naggy.",
+    "New here after the recent updates? A one-time card on Today points out Insights, the weekly challenge, and where history lives — and every ⓘ now explains Insights, the adherence calendar, challenges, records, and the monthly recap.",
   ],
 };
 function showWhatsNewSheet(version) {
@@ -1076,6 +1095,52 @@ function renderToday() {
   renderFasting();
   renderNote(k);
   renderChallenge();
+  renderTour();
+  renderBackupBanner();
+}
+// One-time orientation card — only on today, only until dismissed, and only
+// once there's some history so it doesn't greet a brand-new user mid-onboarding.
+function renderTour() {
+  const show = viewDate === todayKey() && !state.settings.tourDismissed && state.weights.length >= 3;
+  $("#tourCard").classList.toggle("hidden", !show);
+}
+$("#tourDismiss").addEventListener("click", () => {
+  state.settings.tourDismissed = true; save(); haptic("light");
+  $("#tourCard").classList.add("hidden");
+});
+// Data lives only in this device's localStorage on a sideloaded app — a lapsed
+// re-sign or a delete wipes it. Nudge a backup when it's never happened or has
+// gone stale, snoozable so it isn't nagging.
+const BACKUP_STALE_DAYS = 45, BACKUP_SNOOZE_DAYS = 14;
+function backupAgeDays() {
+  const lb = state.settings.lastBackup;
+  return lb ? Math.floor((Date.now() - new Date(lb).getTime()) / 86400000) : null;
+}
+function backupIsStale() {
+  const age = backupAgeDays();
+  return age === null || age >= BACKUP_STALE_DAYS;
+}
+function renderBackupBanner() {
+  const snooze = state.settings.backupSnoozeUntil;
+  const snoozed = snooze && todayKey() < snooze;
+  const show = viewDate === todayKey() && state.weights.length >= 3 && backupIsStale() && !snoozed;
+  $("#backupBanner").classList.toggle("hidden", !show);
+  if (!show) return;
+  const age = backupAgeDays();
+  $("#backupBannerText").textContent = age === null
+    ? "You've never backed up. Your data lives only on this phone — export a copy so a re-sign or reinstall can't wipe it."
+    : `Last backup was ${age} days ago. Export a fresh copy to keep your history safe.`;
+}
+$("#backupNowBtn").addEventListener("click", () => $("#exportBtn").click());
+$("#backupLaterBtn").addEventListener("click", () => {
+  state.settings.backupSnoozeUntil = addDays(todayKey(), BACKUP_SNOOZE_DAYS);
+  save(); haptic("light"); $("#backupBanner").classList.add("hidden");
+});
+function backupStatusText() {
+  const age = backupAgeDays();
+  if (age === null) return "⚠️ No backup yet — export one to keep your data safe.";
+  if (age >= BACKUP_STALE_DAYS) return `⚠️ Last backup ${age} days ago — worth refreshing.`;
+  return `Last backup ${age === 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " ago"}.`;
 }
 // Notes render as plain text; a press swaps in the textarea. This keeps a
 // stray scroll-tap from popping the keyboard open.
@@ -1702,16 +1767,26 @@ function renderOFFList() {
 
 /* ---------- detail / qty ---------- */
 let detail = null;
-// Pull a per-serving gram weight out of serving strings like "1 large (50 g)" or "40 g".
+// Stable key for remembering a per-serving weight a user supplied for a food
+// that didn't carry one in its serving string.
+function foodKey(food) { return food.id || ("nm:" + (food.name || "").trim().toLowerCase()); }
+// Grams (or ml) per serving. Prefer a value parsed out of the serving string
+// ("1 large (50 g)", "40 g", "250 ml"); fall back to a weight the user has
+// supplied before for this food. This one source feeds every serving↔g/ml
+// conversion so the toggle works for ANY food, not just barcode/per-100 ones.
 function servingGrams(food) {
   const m = /([\d.]+)\s*(g|ml)\b/i.exec(food.serving || "");
-  return m ? parseFloat(m[1]) : null;
+  if (m) return parseFloat(m[1]);
+  const ov = state.foodServingOverrides[foodKey(food)];
+  return ov != null ? ov : null;
 }
 function openDetail(food, mode) {
   detail = { food, mode, unit: mode === "per100" ? "g" : "serv", grams: servingGrams(food) };
   $("#detailName").textContent = food.name;
   $("#detailServing").textContent = mode === "per100" ? `${r0(food.kcal)} kcal per 100 g${food.brand ? " · " + food.brand : ""}` : `${r0(food.kcal)} kcal per ${food.serving || "serving"}`;
-  $("#detailUnitSeg").classList.toggle("hidden", !(mode === "serving" && detail.grams));
+  // The unit toggle is available for every serving-mode food now; per-100
+  // foods (barcode/online) are already gram-based so they don't need it.
+  $("#detailUnitSeg").classList.toggle("hidden", mode === "per100");
   $$("#detailUnitSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === "serv"));
   applyDetailUnit();
   $("#detailTime").value = nowTimeStr();
@@ -1719,10 +1794,15 @@ function openDetail(food, mode) {
   $("#detailSheet").classList.remove("hidden");
 }
 function applyDetailUnit() {
+  const swRow = $("#detailServingWeightRow"), byWeight = detail.unit === "g" || detail.unit === "ml";
+  // The "1 serving = __" field appears only when converting to g/ml, so any
+  // food can be given a serving weight inline (persisted per food).
+  swRow.classList.toggle("hidden", detail.mode === "per100" || !byWeight);
+  if (byWeight) { $("#detailServingWeight").value = detail.grams != null ? detail.grams : ""; $("#detailServingWeightUnit").textContent = detail.unit; }
   if (detail.mode === "per100") {
     $("#qtyInput").value = 100; $("#qtyInput").step = 10; $("#qtyUnit").textContent = "g";
-  } else if (detail.unit === "g" || detail.unit === "ml") {
-    $("#qtyInput").value = detail.grams; $("#qtyInput").step = 5; $("#qtyUnit").textContent = detail.unit;
+  } else if (byWeight) {
+    $("#qtyInput").value = detail.grams != null ? detail.grams : ""; $("#qtyInput").step = 5; $("#qtyUnit").textContent = detail.unit;
   } else {
     $("#qtyInput").value = 1; $("#qtyInput").step = 0.5; $("#qtyUnit").textContent = "× serving";
   }
@@ -1734,10 +1814,21 @@ $("#detailUnitSeg").addEventListener("click", (e) => {
   $$("#detailUnitSeg button").forEach((x) => x.classList.toggle("active", x === b));
   applyDetailUnit();
 });
+// Supplying/adjusting the serving weight persists it for this food and drives
+// the conversion live.
+$("#detailServingWeight").addEventListener("input", () => {
+  const gw = parseFloat($("#detailServingWeight").value);
+  detail.grams = gw > 0 ? gw : null;
+  if (gw > 0) {
+    state.foodServingOverrides[foodKey(detail.food)] = gw; save();
+    if (!(parseFloat($("#qtyInput").value) > 0)) $("#qtyInput").value = gw;
+  }
+  updateMacroPreview();
+});
 function detailFactor() {
   const q = parseFloat($("#qtyInput").value) || 0;
   if (detail.mode === "per100") return q / 100;
-  if ((detail.unit === "g" || detail.unit === "ml") && detail.grams) return q / detail.grams;
+  if (detail.unit === "g" || detail.unit === "ml") return detail.grams ? q / detail.grams : 0;
   return q;
 }
 function updateMacroPreview() {
@@ -2968,13 +3059,13 @@ function renderInsights() {
   const focus = focusCandidates.sort((a, b) => a.prio - b.prio)[0];
   $("#focusCard").classList.toggle("hidden", !focus);
   if (focus) {
-    $("#focusCard").innerHTML = `<div class="card-head"><h3><span class="ic t-green" data-ic="target"></span>Focus this week</h3></div>
+    $("#focusCard").innerHTML = `<div class="card-head"><h3><span class="ic t-green" data-ic="target"></span>Focus this week <button class="info-btn" data-info="insights"><span class="ic" data-ic="info"></span></button></h3></div>
       <p class="focus-main">${esc(focus.txt)}</p>
       <p class="muted">${esc(focus.why)}</p>`;
   }
   $("#insightsCard").classList.toggle("hidden", !rows.length);
   if (rows.length) {
-    $("#insightsCard").innerHTML = `<div class="card-head"><h3><span class="ic t-blue" data-ic="sparkle"></span>Patterns — last 4 weeks</h3></div>
+    $("#insightsCard").innerHTML = `<div class="card-head"><h3><span class="ic t-blue" data-ic="sparkle"></span>Patterns — last 4 weeks <button class="info-btn" data-info="insights"><span class="ic" data-ic="info"></span></button></h3></div>
       <ul class="insight-list">${rows.map((r) => `<li><span class="ic ${r.cls}" data-ic="${r.ic}"></span><span>${esc(r.txt)}</span></li>`).join("")}</ul>`;
   }
   $("#insightsLabel").classList.toggle("hidden", !focus && !rows.length);
@@ -3034,7 +3125,7 @@ function renderChallenge() {
       </div>
       <span class="challenge-count">${c.progress}/${c.target}</span>
     </div>
-    <p class="muted challenge-sub">this week's challenge</p>`;
+    <p class="muted challenge-sub">this week's challenge <button class="info-btn" data-info="challenge"><span class="ic" data-ic="info"></span></button></p>`;
   renderIcons(el);
 }
 
@@ -3082,7 +3173,7 @@ function renderRecords() {
   }
   const box = (v, k, sub) => `<div class="stat-box"><div class="v">${v}</div><div class="k">${k}${sub ? `<br><span class="rec-sub">${sub}</span>` : ""}</div></div>`;
   el.classList.remove("hidden");
-  el.innerHTML = `<div class="card-head"><h3><span class="ic t-amber" data-ic="flame"></span>Records</h3><span class="muted">all-time</span></div>
+  el.innerHTML = `<div class="card-head"><h3><span class="ic t-amber" data-ic="flame"></span>Records <button class="info-btn" data-info="records"><span class="ic" data-ic="info"></span></button></h3><span class="muted">all-time</span></div>
     <div class="stat-grid">
       ${box(maxOn, `day${maxOn === 1 ? "" : "s"} on target in a row`)}
       ${box(maxLog, `day${maxLog === 1 ? "" : "s"} logged in a row`)}
@@ -3125,7 +3216,7 @@ function renderRecap() {
   if (!recapMonth || recapMonth > curMonth) recapMonth = curMonth;
   const s = recapStats(recapMonth);
   el.innerHTML = `<div class="card-head">
-      <h3><span class="ic t-purple" data-ic="calendar"></span>Monthly recap</h3>
+      <h3><span class="ic t-purple" data-ic="calendar"></span>Monthly recap <button class="info-btn" data-info="recap"><span class="ic" data-ic="info"></span></button></h3>
       <span class="hm-nav"><button class="day-nav" id="recapPrev"><span class="ic" data-ic="chevL"></span></button><span class="hm-month">${s.label}</span><button class="day-nav" id="recapNext"><span class="ic" data-ic="chevR"></span></button></span>
     </div>
     ${s.partial ? `<p class="muted" style="margin-bottom:10px">Month in progress — ${s.elapsed} day${s.elapsed === 1 ? "" : "s"} so far.</p>` : ""}
@@ -3221,7 +3312,7 @@ function renderHeatmap() {
     cells += `<button class="hm-cell ${cls}${dk === nowK ? " today" : ""}" data-dk="${dk}"${future ? " disabled" : ""}>${d}</button>`;
   }
   $("#heatmapCard").innerHTML = `<div class="card-head">
-      <h3><span class="ic t-green" data-ic="calendar"></span>Adherence</h3>
+      <h3><span class="ic t-green" data-ic="calendar"></span>Adherence <button class="info-btn" data-info="heatmap"><span class="ic" data-ic="info"></span></button></h3>
       <span class="hm-nav"><button class="day-nav" id="hmPrev"><span class="ic" data-ic="chevL"></span></button><span class="hm-month">${monthLabel}</span><button class="day-nav" id="hmNext"><span class="ic" data-ic="chevR"></span></button></span>
     </div>
     <div class="hm-grid">${cells}</div>
@@ -3257,8 +3348,72 @@ function checkGoals() {
   for (const g of state.goals) {
     if (!g.achievedOn && cw <= g.targetKg) { g.achievedOn = todayKey(); hit = g; }
   }
-  if (hit) { save(); haptic(); toast(`Goal reached: ${hit.label}!`); }
+  if (hit) {
+    // Queue the celebration so it survives an app restart and shows even if the
+    // goal was crossed by a background/late weigh-in (only the newest hit wins).
+    state.pendingCelebration = hit.id; save(); haptic();
+    maybeShowCelebration();
+  }
 }
+// Stats behind a reached goal, measured from the whole journey's start weight.
+function goalAchievement(g) {
+  const p = state.profile;
+  const startKey = g.created || (p && p.startDate) || g.achievedOn;
+  const days = Math.max(1, daysBetween(startKey, g.achievedOn));
+  const lost = r1(p.startWeightKg - g.targetKg);
+  const perWeek = r1((lost / days) * 7);
+  return { days, lost, perWeek };
+}
+function maybeShowCelebration() {
+  const id = state.pendingCelebration;
+  if (!id) return;
+  const g = state.goals.find((x) => x.id === id && x.achievedOn);
+  if (!g) { state.pendingCelebration = null; save(); return; }
+  const a = goalAchievement(g);
+  $("#celebrateName").textContent = g.label;
+  $("#celebrateTarget").textContent = `${r1(g.targetKg)} kg reached on ${fmtShort(g.achievedOn)}`;
+  $("#celebrateStats").innerHTML = `
+    <div class="stat-box"><div class="v">${a.lost > 0 ? "−" : ""}${Math.abs(a.lost)} kg</div><div class="k">lost since start</div></div>
+    <div class="stat-box"><div class="v">${a.days}</div><div class="k">days to get here</div></div>
+    <div class="stat-box"><div class="v">${a.perWeek > 0 ? "−" : ""}${Math.abs(a.perWeek)} kg</div><div class="k">avg per week</div></div>
+    <div class="stat-box"><div class="v">${state.goals.filter((x) => x.achievedOn).length}</div><div class="k">goals reached</div></div>`;
+  renderIcons($("#goalCelebrateSheet"));
+  $("#goalCelebrateSheet").classList.remove("hidden");
+}
+function dismissCelebration() {
+  state.pendingCelebration = null; save();
+  $("#goalCelebrateSheet").classList.add("hidden");
+}
+wireSheetClose("goalCelebrateSheet", "goalCelebrateClose", dismissCelebration);
+$("#celebrateKeepBtn").addEventListener("click", dismissCelebration);
+$("#celebrateShareBtn").addEventListener("click", async () => {
+  const g = state.goals.find((x) => x.id === state.pendingCelebration && x.achievedOn);
+  if (!g) return;
+  const a = goalAchievement(g);
+  const W = 680, H = 820, cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  const font = (w, px) => `${w} ${px}px Hanken, -apple-system, sans-serif`;
+  ctx.fillStyle = "#08080a"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#08C343"; ctx.font = font(800, 30);
+  ctx.fillText("FitTrack", W / 2, 76);
+  ctx.font = font(800, 120); ctx.fillText("✓", W / 2, 230);
+  ctx.fillStyle = "#f2f3f5"; ctx.font = font(800, 46);
+  ctx.fillText("Goal reached", W / 2, 310);
+  ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 30);
+  ctx.fillText(g.label + " · " + r1(g.targetKg) + " kg", W / 2, 360);
+  const rows = [[`${a.lost > 0 ? "−" : ""}${Math.abs(a.lost)} kg`, "lost since start", `${a.days}`, "days"], [`${a.perWeek > 0 ? "−" : ""}${Math.abs(a.perWeek)} kg`, "per week", `${state.goals.filter((x) => x.achievedOn).length}`, "goals reached"]];
+  let y = 470;
+  for (const [v1, k1, v2, k2] of rows) {
+    ctx.fillStyle = "#f2f3f5"; ctx.font = font(800, 54);
+    ctx.fillText(v1, W * 0.28, y); ctx.fillText(v2, W * 0.72, y);
+    ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 24);
+    ctx.fillText(k1, W * 0.28, y + 40); ctx.fillText(k2, W * 0.72, y + 40);
+    y += 150;
+  }
+  await sharePngFile(`fittrack-goal-${g.id}.png`, cv.toDataURL("image/png"), "FitTrack — Goal reached");
+});
 function goalCard(g) {
   const p = state.profile, start = p.startWeightKg, cw = currentWeight(), tgt = g.targetKg, date = g.date;
   if (g.achievedOn) {
@@ -4276,6 +4431,7 @@ function renderSettings() {
   $("#settingsInfo").textContent = `BMR ≈ ${r0(bmr(p.sex, currentWeight(), p.heightCm, p.age))} · maintenance ≈ ${tdee()} kcal`;
   $$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === state.settings.theme));
   $("#versionInfo").textContent = "FitTrack v" + APP_VERSION;
+  $("#backupInfo").textContent = backupStatusText();
   $("#aboutVersion").textContent = "v" + APP_VERSION;
   $("#setReminder").checked = !!state.settings.reminder.enabled;
   $("#setReminderTime").value = state.settings.reminder.time || "19:00";
@@ -4653,7 +4809,13 @@ async function shareItem(filename, obj, label) {
   await shareTextFile(filename, JSON.stringify(obj, null, 2), label, "application/json");
 }
 $("#exportBtn").addEventListener("click", async () => {
+  // The JSON backup is the restorable one, so it's what resets the nudge.
+  state.settings.lastBackup = new Date().toISOString();
+  state.settings.backupSnoozeUntil = null;
+  save();
   await shareItem(`fittrack-backup-${todayKey()}.json`, state, "FitTrack Backup");
+  $("#backupInfo").textContent = backupStatusText();
+  renderBackupBanner();
   toast("Backup exported (photos not included)");
 });
 // Spreadsheet export: one row per day from first log/weigh-in to today —
@@ -4727,6 +4889,7 @@ function startApp() {
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
   if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
   maybeShowWhatsNew();
+  maybeShowCelebration(); // resurface an undismissed goal celebration from last session
 }
 
 renderIcons();
