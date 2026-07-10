@@ -701,6 +701,16 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .hm-lg-over::before { color: var(--amber); }
 .hm-lg-off::before { color: var(--card2); }
 
+.rec-sub { color: var(--muted2); font-size: var(--fs-2xs); }
+
+/* ===== Weekly challenge ===== */
+.challenge-row { display: flex; align-items: center; gap: 12px; }
+.challenge-row > .ic { flex: 0 0 18px; width: 18px; height: 18px; }
+.challenge-main { flex: 1; min-width: 0; }
+.challenge-label { font-weight: 600; font-size: var(--fs-sm); margin-bottom: 6px; }
+.challenge-count { font-variant-numeric: tabular-nums; font-weight: 700; font-size: var(--fs-md); }
+.challenge-sub { font-size: var(--fs-2xs); margin-top: 8px; }
+
 /* ===== Insights ===== */
 .focus-main { font-size: var(--fs-lg); font-weight: 700; margin: 2px 0 6px; letter-spacing: -0.2px; }
 .insight-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }

@@ -126,6 +126,9 @@
         <button class="info-btn" data-info="streak"><span class="ic" data-ic="info"></span></button>
       </div>
 
+      <!-- Weekly challenge -->
+      <section class="card" id="challengeCard"></section>
+
       <!-- One-tap quick log -->
       <section class="card quick-card" id="quickCard">
         <div class="card-head">
@@ -197,6 +200,8 @@
       <section class="card hidden" id="focusCard"></section>
       <section class="card hidden" id="insightsCard"></section>
       <section class="card" id="heatmapCard"></section>
+      <section class="card hidden" id="recordsCard"></section>
+      <section class="card" id="recapCard"></section>
       <h2 class="section-label">Goals</h2>
       <section id="goalCards"></section>
       <h2 class="section-label">Logging history</h2>
@@ -437,25 +442,6 @@
           <label class="switch"><input type="checkbox" id="setWeekly"><span class="knob"></span></label>
         </div>
         <p class="muted center" id="reminderInfo" style="margin-top:10px"></p>
-      </section>
-      <section class="card">
-        <div class="card-head"><h3><span class="ic t-blue" data-ic="heart"></span>Apple Health</h3></div>
-        <p class="muted" id="healthUnavailNote" style="margin-bottom:10px">Read-only — FitTrack never writes to Health. Pulls in new data each time you open the app.</p>
-        <p class="muted" style="margin-bottom:10px">⚠️ Known limitation: SideStore's free-account signing strips the HealthKit permission when it installs the app, so iOS refuses Health access no matter what you toggle here. This isn't fixable from inside FitTrack — it needs SideStore to support the HealthKit entitlement (or a paid Apple Developer account with proper signing). Manual logging below is the reliable path for now.</p>
-        <div class="switch-row">
-          <div><div class="switch-title">Weight</div><div class="muted">From your smart scale or any Health-connected app</div></div>
-          <label class="switch"><input type="checkbox" id="setHealthWeight"><span class="knob"></span></label>
-        </div>
-        <div class="switch-row">
-          <div><div class="switch-title">Steps</div><div class="muted">Overwrites steps for a day unless you've entered them yourself</div></div>
-          <label class="switch"><input type="checkbox" id="setHealthSteps"><span class="knob"></span></label>
-        </div>
-        <div class="switch-row">
-          <div><div class="switch-title">Sleep</div><div class="muted">Same rule — your manual entry always wins over Health</div></div>
-          <label class="switch"><input type="checkbox" id="setHealthSleep"><span class="knob"></span></label>
-        </div>
-        <button class="btn ghost full" id="healthSyncNowBtn" style="margin-top:10px">Sync now</button>
-        <p class="muted center" id="healthSyncInfo" style="margin-top:8px"></p>
       </section>
       <section class="card">
         <div class="card-head"><h3><span class="ic t-amber" data-ic="sparkle"></span>AI photo estimates</h3></div>

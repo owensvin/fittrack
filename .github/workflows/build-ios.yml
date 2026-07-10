@@ -72,20 +72,6 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Used to scan food barcodes.'" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Used to save progress photos.'" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'Used to attach meal and progress photos.'" "$PLIST" || true
-          /usr/libexec/PlistBuddy -c "Add :NSHealthShareUsageDescription string 'Used to sync your weight, steps, and sleep from Apple Health.'" "$PLIST" || true
-
-      # HealthKit needs its own entitlement (separate from an Info.plist string).
-      # ios/ is regenerated fresh every run (gitignored), so this can't just be
-      # committed once — it's injected here, same as the Info.plist keys above.
-      - name: Enable HealthKit entitlement
-        run: |
-          ENT="ios/App/App/App.entitlements"
-          # PlistBuddy creates the file from scratch if it doesn't exist yet.
-          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT" || true
-          echo "--- App.entitlements ---"; cat "$ENT"
-          if ! grep -q "CODE_SIGN_ENTITLEMENTS" ios/App/App.xcodeproj/project.pbxproj; then
-            echo "::warning::No CODE_SIGN_ENTITLEMENTS build setting found in project.pbxproj — the entitlements file above may not be picked up at sign time, which would make HealthKit authorization fail on-device even though the build succeeds. If HealthKit sync doesn't work after install, this is the first thing to check."
-          fi
 
       - name: Build unsigned .app (version stamped from package.json)
         run: |
@@ -103,22 +89,6 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build
-
-      # xcodebuild ran with CODE_SIGNING_ALLOWED=NO, so nothing ever actually
-      # codesigned the binary — the entitlements written into App.entitlements
-      # above were sitting in the project but never embedded anywhere. SideStore
-      # determines which capabilities to request from Apple by reading the
-      # entitlements already present in the app it's re-signing, so an app with
-      # zero embedded entitlements gets zero capabilities, no matter what's in
-      # the (unused) entitlements file. Ad-hoc signing (identity "-", no
-      # certificate needed) embeds the real entitlements so SideStore's re-sign
-      # step has something to read and request a matching profile for.
-      - name: Ad-hoc sign so SideStore can detect requested entitlements
-        run: |
-          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
-          codesign --force --deep --sign - --entitlements ios/App/App/App.entitlements "$APP"
-          echo "--- embedded entitlements ---"
-          codesign -d --entitlements :- "$APP"
 
       - name: Package into .ipa
         run: |

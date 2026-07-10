@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.5.1";
+const APP_VERSION = "3.6";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -126,7 +126,6 @@ const ICONS = {
   pulse: '<polyline points="2 12 6 12 9 3 15 21 18 12 22 12"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   info: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="7.5" r="0.9" fill="currentColor"/>',
-  heart: '<path d="M12 20s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 5c-2.5 4.6-9.5 9-9.5 9z"/>',
   grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
   pencil: '<path d="M4 20l1-4.5L15.5 5 19 8.5 8.5 19 4 20z"/><line x1="13.5" y1="6.5" x2="17" y2="10"/>',
   minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
@@ -307,13 +306,14 @@ function defaultState() {
     weights: [], waists: [],
     customFoods: [], favs: [], recents: [],
     goals: [],
+    challenge: null, // {weekKey, id} — this week's auto-picked challenge
     supplements: defaultSupplements(),
     workoutTemplates: [],
     activeWorkoutIds: [],
     trainingSchedule: defaultTrainingSchedule(),
     trainingBreak: null, // {from, until} date-key range; overrides the weekly pattern without editing it
     workoutNotifs: {}, // workoutId -> {enabled, time}
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, appleHealth: { weight: false, steps: false, sleep: false, lastSync: null }, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -334,7 +334,6 @@ function loadState() {
       if (!s.settings.timer.program) s.settings.timer.program = [];
       if (!s.settings.weeklyReview) s.settings.weeklyReview = { enabled: false };
       if (s.settings.lastSeenVersion === undefined) s.settings.lastSeenVersion = null;
-      if (!s.settings.appleHealth) s.settings.appleHealth = { weight: false, steps: false, sleep: false, lastSync: null };
       if (s.profile && !s.profile.kcalTargetHistory) s.profile.kcalTargetHistory = [{ from: s.profile.startDate || todayKey(), kcal: s.profile.kcalTarget }];
       if (s.profile && s.profile.targetDeficit == null) {
         const pr = s.profile, wt = (s.weights && s.weights.length) ? s.weights[s.weights.length - 1].kg : pr.startWeightKg;
@@ -749,6 +748,12 @@ const WHATS_NEW = {
     "Water drops all sit on the same line now.",
     "Apple Health: added an honest note in Settings — SideStore's free-account signing strips the HealthKit permission at install, so sync can't work under the current setup. Not a FitTrack bug; manual logging stays the reliable path.",
   ],
+  "3.6": [
+    "Weekly challenge on Today — one concrete, countable goal per week (log every day, hold the weekend, hit protein 5×, kitchen closed by 9:30, …), auto-picked from your own weak spot and locked in at the start of each week with a live progress bar.",
+    "Records on Progress — all-time bests straight from your data: longest on-target and logging streaks, best week, biggest 7-day trend drop, longest overnight fast, most active week. No badges, no confetti — just receipts.",
+    "Monthly recap on Progress — each month's weight trend, logging, on-target days, deficit, and workouts, browsable month by month, with a \"Share as image\" button that renders a clean recap card for sending or saving.",
+    "Apple Health is gone. The honest version: SideStore's free-account signing strips the HealthKit permission at install time, so the sync could never actually run on your phone — the toggles were dead weight. Removed rather than left there looking broken. If SideStore adds HealthKit support upstream, it can come back.",
+  ],
 };
 function showWhatsNewSheet(version) {
   const entry = WHATS_NEW[version];
@@ -1070,6 +1075,7 @@ function renderToday() {
   renderSupps(k);
   renderFasting();
   renderNote(k);
+  renderChallenge();
 }
 // Notes render as plain text; a press swaps in the textarea. This keeps a
 // stray scroll-tap from popping the keyboard open.
@@ -2974,6 +2980,222 @@ function renderInsights() {
   $("#insightsLabel").classList.toggle("hidden", !focus && !rows.length);
   renderIcons($("#focusCard")); renderIcons($("#insightsCard"));
 }
+/* ---------- weekly challenge ----------
+   One concrete, countable goal per week, auto-picked from the same signals
+   as the Focus card — chosen once when the week starts (stored in
+   state.challenge) so it doesn't flip-flop mid-week as data shifts. */
+const CHALLENGES = {
+  log: { label: "Log your food every day", target: 7, test: (dk) => loggedDay(dk) },
+  weekend: { label: "Stay on target through the weekend", target: 2, test: (dk) => isWeekend(dk) && dayComplete(dk) },
+  protein: { label: "Hit your protein target on 5 days", target: 5, test: (dk) => loggedDay(dk) && dayTotals(dk).p >= state.profile.proteinTarget },
+  latenight: { label: "Kitchen closed by 9:30 pm on 5 days", target: 5, test: (dk) => { if (!loggedDay(dk)) return false; const t = dayMealTimes(dk); const last = new Date(t[t.length - 1]); return last.getHours() * 60 + last.getMinutes() < 21.5 * 60; } },
+  target: { label: "Stay under your calorie target on 5 days", target: 5, test: (dk) => dayComplete(dk) },
+};
+function pickChallengeId() {
+  let logged14 = 0; for (let i = 0; i < 14; i++) if (loggedDay(addDays(todayKey(), -i))) logged14++;
+  if (logged14 / 14 < 0.8) return "log";
+  const perDay = [];
+  for (let i = 27; i >= 0; i--) {
+    const dk = addDays(todayKey(), -i), t = dayTotals(dk);
+    if (t.items > 0) perDay.push({ dk, dow: fromKey(dk).getDay(), t, target: targetFor(dk) });
+  }
+  if (perDay.length >= 7) {
+    const wkend = perDay.filter((d) => d.dow === 0 || d.dow === 6), wkday = perDay.filter((d) => d.dow >= 1 && d.dow <= 5);
+    if (wkend.length >= 2 && wkday.length >= 4) {
+      const avgVs = (arr) => arr.reduce((s, d) => s + d.t.kcal - d.target, 0) / arr.length;
+      if (avgVs(wkend) > 100 && avgVs(wkday) <= 50) return "weekend";
+    }
+    if (perDay.filter((d) => d.t.p >= state.profile.proteinTarget).length / perDay.length < 0.5) return "protein";
+    const lates = perDay.filter((d) => { const t = dayMealTimes(d.dk); if (!t.length) return false; const last = new Date(t[t.length - 1]); return last.getHours() * 60 + last.getMinutes() >= 21.5 * 60; });
+    if (lates.length / perDay.length > 0.35) return "latenight";
+  }
+  return "target";
+}
+function currentChallenge() {
+  const wk = weekStartKey(todayKey());
+  if (!state.challenge || state.challenge.weekKey !== wk || !CHALLENGES[state.challenge.id]) {
+    state.challenge = { weekKey: wk, id: pickChallengeId() };
+    save();
+  }
+  const c = CHALLENGES[state.challenge.id];
+  let n = 0, guard = 0;
+  for (let dk = wk; dk <= todayKey() && guard++ < 8; dk = addDays(dk, 1)) if (c.test(dk)) n++;
+  return { ...c, id: state.challenge.id, progress: Math.min(n, c.target) };
+}
+function renderChallenge() {
+  const el = $("#challengeCard"); if (!el || !state.profile) return;
+  const c = currentChallenge();
+  const done = c.progress >= c.target;
+  el.innerHTML = `<div class="challenge-row">
+      <span class="ic ${done ? "t-green" : "t-amber"}" data-ic="${done ? "check" : "target"}"></span>
+      <div class="challenge-main">
+        <div class="challenge-label">${esc(c.label)}${done ? " — done!" : ""}</div>
+        <div class="mini-bar"><div class="mini-bar-fill" style="width:${(c.progress / c.target) * 100}%;background:var(--accent)"></div></div>
+      </div>
+      <span class="challenge-count">${c.progress}/${c.target}</span>
+    </div>
+    <p class="muted challenge-sub">this week's challenge</p>`;
+  renderIcons(el);
+}
+
+/* ---------- personal records ----------
+   All-time bests computed from the raw logs — data-driven bragging rights,
+   no badges or mascots. Only renders once there's something to brag about. */
+function renderRecords() {
+  const el = $("#recordsCard"); if (!el) return;
+  const start = firstDataKey(), today = todayKey();
+  let curOn = 0, maxOn = 0, curLog = 0, maxLog = 0, anyLogged = false;
+  const weekOn = {}, weekBurn = {};
+  let prevLastTs = null, maxFast = null;
+  let guard = 0;
+  for (let dk = start; dk <= today && guard++ < 3700; dk = addDays(dk, 1)) {
+    const logged = loggedDay(dk), on = dayComplete(dk);
+    anyLogged = anyLogged || logged;
+    curLog = logged ? curLog + 1 : 0; if (curLog > maxLog) maxLog = curLog;
+    curOn = on ? curOn + 1 : 0; if (curOn > maxOn) maxOn = curOn;
+    const ws = weekStartKey(dk);
+    if (on) weekOn[ws] = (weekOn[ws] || 0) + 1;
+    const l = state.logs[dk];
+    if (l && l.walks && l.walks.length) weekBurn[ws] = (weekBurn[ws] || 0) + l.walks.reduce((s, w) => s + (w.kcal || 0), 0);
+    const times = dayMealTimes(dk);
+    if (times.length) {
+      if (prevLastTs != null) {
+        const mins = (times[0] - prevLastTs) / 60000;
+        if (mins > 0 && (!maxFast || mins > maxFast.mins)) maxFast = { mins, d: dk };
+      }
+      prevLastTs = times[times.length - 1];
+    } else prevLastTs = null;
+  }
+  if (!anyLogged) { el.classList.add("hidden"); return; }
+  const bestWeek = Object.entries(weekOn).sort((a, b) => b[1] - a[1])[0];
+  const bestBurn = Object.entries(weekBurn).sort((a, b) => b[1] - a[1])[0];
+  // Biggest 7-day trend drop — two-pointer walk over the moving average.
+  const ma = movingAvg(state.weights);
+  let bestDrop = null, j = 0;
+  for (let i = 0; i < ma.length; i++) {
+    const cutoff = addDays(ma[i].d, -7);
+    while (j + 1 <= i && ma[j + 1].d <= cutoff) j++;
+    if (ma[j].d <= cutoff) {
+      const drop = ma[i].v - ma[j].v;
+      if (bestDrop == null || drop < bestDrop.v) bestDrop = { v: drop, d: ma[i].d };
+    }
+  }
+  const box = (v, k, sub) => `<div class="stat-box"><div class="v">${v}</div><div class="k">${k}${sub ? `<br><span class="rec-sub">${sub}</span>` : ""}</div></div>`;
+  el.classList.remove("hidden");
+  el.innerHTML = `<div class="card-head"><h3><span class="ic t-amber" data-ic="flame"></span>Records</h3><span class="muted">all-time</span></div>
+    <div class="stat-grid">
+      ${box(maxOn, `day${maxOn === 1 ? "" : "s"} on target in a row`)}
+      ${box(maxLog, `day${maxLog === 1 ? "" : "s"} logged in a row`)}
+      ${bestWeek ? box(`${Math.min(bestWeek[1], 7)}/7`, "best week on target", `wk of ${fmtShort(bestWeek[0])}`) : ""}
+      ${bestDrop && bestDrop.v < 0 ? box(`${r1(bestDrop.v)} kg`, "best 7-day trend drop", fmtShort(bestDrop.d)) : ""}
+      ${maxFast ? box(fmtHm(Math.round(maxFast.mins)), "longest overnight fast", fmtShort(maxFast.d)) : ""}
+      ${bestBurn ? box(r0(bestBurn[1]).toLocaleString(), "most active week (kcal)", `wk of ${fmtShort(bestBurn[0])}`) : ""}
+    </div>`;
+  renderIcons(el);
+}
+
+/* ---------- monthly recap ---------- */
+let recapMonth = null; // "YYYY-MM"
+function recapStats(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const start = `${monthKey}-01`;
+  const endFull = `${monthKey}-${String(daysInMonth).padStart(2, "0")}`;
+  const end = endFull > todayKey() ? todayKey() : endFull;
+  let logged = 0, on = 0, kcalSum = 0, defSum = 0, sessions = 0, burn = 0, elapsed = 0;
+  for (let dk = start, g = 0; dk <= end && g++ < 32; dk = addDays(dk, 1)) {
+    elapsed++;
+    const t = dayTotals(dk);
+    if (t.items > 0) { logged++; kcalSum += t.kcal; defSum += targetFor(dk) - t.kcal; if (dayComplete(dk)) on++; }
+    const l = state.logs[dk];
+    if (l && l.walks && l.walks.length) { sessions += l.walks.length; burn += l.walks.reduce((s, w) => s + (w.kcal || 0), 0); }
+  }
+  const ma = movingAvg(state.weights).filter((p) => p.d >= start && p.d <= end);
+  const wDelta = ma.length >= 2 ? r1(ma[ma.length - 1].v - ma[0].v) : null;
+  return {
+    monthKey, elapsed, logged, on, sessions, burn, wDelta,
+    label: new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+    avgDef: logged ? r0(defSum / logged) : null,
+    partial: endFull > todayKey(),
+  };
+}
+function renderRecap() {
+  const el = $("#recapCard"); if (!el) return;
+  const curMonth = todayKey().slice(0, 7);
+  if (!recapMonth || recapMonth > curMonth) recapMonth = curMonth;
+  const s = recapStats(recapMonth);
+  el.innerHTML = `<div class="card-head">
+      <h3><span class="ic t-purple" data-ic="calendar"></span>Monthly recap</h3>
+      <span class="hm-nav"><button class="day-nav" id="recapPrev"><span class="ic" data-ic="chevL"></span></button><span class="hm-month">${s.label}</span><button class="day-nav" id="recapNext"><span class="ic" data-ic="chevR"></span></button></span>
+    </div>
+    ${s.partial ? `<p class="muted" style="margin-bottom:10px">Month in progress — ${s.elapsed} day${s.elapsed === 1 ? "" : "s"} so far.</p>` : ""}
+    <div class="stat-grid">
+      <div class="stat-box"><div class="v">${s.wDelta != null ? (s.wDelta > 0 ? "+" : "") + s.wDelta + " kg" : "—"}</div><div class="k">weight trend</div></div>
+      <div class="stat-box"><div class="v">${s.logged}/${s.elapsed}</div><div class="k">days logged</div></div>
+      <div class="stat-box"><div class="v">${s.on}</div><div class="k">days on target</div></div>
+      <div class="stat-box"><div class="v">${s.avgDef != null ? Math.abs(s.avgDef) : "—"}</div><div class="k">avg ${s.avgDef != null && s.avgDef < 0 ? "surplus" : "deficit"}</div></div>
+      <div class="stat-box"><div class="v">${s.sessions}</div><div class="k">workouts</div></div>
+      <div class="stat-box"><div class="v">${r0(s.burn).toLocaleString()}</div><div class="k">kcal burned</div></div>
+    </div>
+    <button class="btn ghost full" id="recapShareBtn" style="margin-top:12px"><span class="ic" data-ic="share"></span> Share as image</button>`;
+  renderIcons(el);
+  $("#recapPrev").disabled = recapMonth <= firstLoggedMonthKey();
+  $("#recapNext").disabled = recapMonth >= curMonth;
+  const shift = (dir) => { const [y, m] = recapMonth.split("-").map(Number); const d = new Date(y, m - 1 + dir, 1); recapMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; renderRecap(); };
+  $("#recapPrev").addEventListener("click", () => shift(-1));
+  $("#recapNext").addEventListener("click", () => shift(1));
+  $("#recapShareBtn").addEventListener("click", shareRecapImage);
+}
+// Renders the recap onto a canvas and hands the PNG to the share sheet —
+// a clean dark card, not a screenshot.
+async function shareRecapImage() {
+  const s = recapStats(recapMonth || todayKey().slice(0, 7));
+  const W = 680, H = 860, cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  const font = (w, px) => `${w} ${px}px Hanken, -apple-system, sans-serif`;
+  ctx.fillStyle = "#08080a"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#08C343"; ctx.font = font(800, 30);
+  ctx.fillText("FitTrack", W / 2, 78);
+  ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 30);
+  ctx.fillText(s.label + (s.partial ? " (so far)" : ""), W / 2, 130);
+  const delta = s.wDelta != null ? (s.wDelta > 0 ? "+" : "") + s.wDelta + " kg" : "—";
+  ctx.fillStyle = s.wDelta != null && s.wDelta > 0 ? "#CE5400" : "#08C343"; ctx.font = font(800, 92);
+  ctx.fillText(delta, W / 2, 290);
+  ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 26);
+  ctx.fillText("weight trend", W / 2, 336);
+  const rows = [
+    [`${s.logged}/${s.elapsed}`, "days logged", `${s.on}`, "days on target"],
+    [s.avgDef != null ? String(Math.abs(s.avgDef)) : "—", `avg ${s.avgDef != null && s.avgDef < 0 ? "surplus" : "deficit"} (kcal)`, `${s.sessions}`, "workouts"],
+  ];
+  let y = 470;
+  for (const [v1, k1, v2, k2] of rows) {
+    ctx.fillStyle = "#f2f3f5"; ctx.font = font(800, 54);
+    ctx.fillText(v1, W * 0.28, y); ctx.fillText(v2, W * 0.72, y);
+    ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 24);
+    ctx.fillText(k1, W * 0.28, y + 40); ctx.fillText(k2, W * 0.72, y + 40);
+    y += 150;
+  }
+  ctx.fillStyle = "#f2f3f5"; ctx.font = font(800, 54);
+  ctx.fillText(r0(s.burn).toLocaleString(), W / 2, y);
+  ctx.fillStyle = "#8a8f98"; ctx.font = font(600, 24);
+  ctx.fillText("kcal burned in workouts", W / 2, y + 40);
+  await sharePngFile(`fittrack-${s.monthKey}.png`, cv.toDataURL("image/png"), "FitTrack Monthly Recap");
+}
+async function sharePngFile(filename, dataUrl, label) {
+  if (isNativeApp() && window.capacitorFilesystem && window.capacitorShare) {
+    try {
+      const { Filesystem, Directory } = window.capacitorFilesystem;
+      const { Share } = window.capacitorShare;
+      const { uri } = await Filesystem.writeFile({ path: filename, data: dataUrl.split(",")[1], directory: Directory.Cache });
+      await Share.share({ title: label, url: uri });
+    } catch (e) { toast("Share failed: " + (e.message || "error")); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = dataUrl; a.download = filename; a.click();
+}
+
 /* ---------- adherence heatmap ---------- */
 let heatmapMonth = null; // "YYYY-MM", defaults to the current month
 function renderHeatmap() {
@@ -3025,7 +3247,7 @@ function renderPlateauCard() {
     <p class="muted">Weight has moved only ${Math.abs(p.change)} kg over the last ${p.days} days despite averaging a ${p.avgDeficit} kcal/day deficit. Common causes: water retention, under-logging, or your expenditure has adapted lower — worth double-checking logging accuracy, or a short maintenance break before continuing.</p>`;
   renderIcons(el);
 }
-function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); renderPlateauCard(); renderInsights(); renderHeatmap(); }
+function renderProgress() { renderGoalCards(); renderWeightChart(); renderWaistChart(); renderCalChart(); renderWeekCard(); renderPlateauCard(); renderInsights(); renderHeatmap(); renderRecords(); renderRecap(); }
 
 // A goal reached at ANY point stays reached (stamped with achievedOn),
 // even if the goal's end date hasn't arrived or weight later fluctuates up.
@@ -4000,12 +4222,12 @@ $("#waistSave").addEventListener("click", () => {
 $("#sleepSave").addEventListener("click", () => {
   const v = parseFloat($("#sleepInput").value);
   if (!(v >= 0) || v > 24) return toast("Enter valid sleep hours");
-  const l = dayLog(todayKey()); l.sleepH = v; l.sleepSrc = "manual"; save(); renderSleepSteps(); toast("Sleep logged");
+  const l = dayLog(todayKey()); l.sleepH = v; save(); renderSleepSteps(); toast("Sleep logged");
 });
 $("#stepsSave").addEventListener("click", () => {
   const v = parseInt($("#stepsInput").value, 10);
   if (!(v >= 0) || v > 200000) return toast("Enter a valid step count");
-  const l = dayLog(todayKey()); l.steps = v; l.stepsSrc = "manual"; save(); renderSleepSteps(); toast("Steps logged");
+  const l = dayLog(todayKey()); l.steps = v; save(); renderSleepSteps(); toast("Steps logged");
 });
 
 /* photos via IndexedDB */
@@ -4061,7 +4283,6 @@ function renderSettings() {
     ? `Reminder set for ${state.settings.reminder.time} daily.`
     : "Reminders only fire in the installed app, not this preview.";
   $("#setWeekly").checked = !!state.settings.weeklyReview.enabled;
-  renderHealthSettings();
   renderProfileSummary();
   renderTargetsSummary();
   renderPaceTiers();
@@ -4214,88 +4435,6 @@ function renderPaceTiers() {
 }
 function isNativeApp() { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
 
-/* ---------- Apple Health (read-only sync) ---------- */
-// Local Capacitor plugin (plugins/healthkit), same pattern as FoundationLLM —
-// registered directly since there's no vendored JS bundle for it.
-const HealthKit = (window.Capacitor && window.Capacitor.registerPlugin)
-  ? window.Capacitor.registerPlugin("HealthKit") : null;
-function renderHealthSettings() {
-  const h = state.settings.appleHealth;
-  $("#setHealthWeight").checked = !!h.weight;
-  $("#setHealthSteps").checked = !!h.steps;
-  $("#setHealthSleep").checked = !!h.sleep;
-  $("#healthUnavailNote").classList.toggle("hidden", isNativeApp());
-  $("#healthSyncInfo").textContent = h.lastSync ? `Last synced ${fmtShort(toKey(new Date(h.lastSync)))} ${fmtTime(h.lastSync)}` : "Never synced yet.";
-}
-$("#setHealthWeight").addEventListener("change", () => { state.settings.appleHealth.weight = $("#setHealthWeight").checked; save(); if ($("#setHealthWeight").checked) syncAppleHealth(); });
-$("#setHealthSteps").addEventListener("change", () => { state.settings.appleHealth.steps = $("#setHealthSteps").checked; save(); if ($("#setHealthSteps").checked) syncAppleHealth(); });
-$("#setHealthSleep").addEventListener("change", () => { state.settings.appleHealth.sleep = $("#setHealthSleep").checked; save(); if ($("#setHealthSleep").checked) syncAppleHealth(); });
-$("#healthSyncNowBtn").addEventListener("click", () => syncAppleHealth(true));
-// Pulls new samples since the last sync and merges them in. Weight is
-// additive (the data model already supports multiple same-day readings, so
-// Health entries just join whatever's already logged); steps/sleep are one
-// value per day, so a manual entry (stepsSrc/sleepSrc "manual") always wins
-// over Health — Health only fills in days you haven't entered yourself.
-async function syncAppleHealth(manual) {
-  if (!(isNativeApp() && HealthKit)) { if (manual) toast("Apple Health is only available in the installed app"); return; }
-  const h = state.settings.appleHealth;
-  const kinds = [];
-  if (h.weight) kinds.push("weight");
-  if (h.steps) kinds.push("steps");
-  if (h.sleep) kinds.push("sleep");
-  // Previously bailed here with no kinds enabled — meaning if you never
-  // flipped a toggle on (just opened Settings and looked), the OS permission
-  // request never fired at all, and nothing would show up under iOS
-  // Settings/Health for the app. "Sync now" is the one explicit, unambiguous
-  // action to ask for access, so it always requests all three read types
-  // regardless of toggle state; automatic background syncs (app open) still
-  // only ask for whatever's actually turned on.
-  if (!manual && !kinds.length) return;
-  const requestKinds = manual ? ["weight", "steps", "sleep"] : kinds;
-  try {
-    const avail = await HealthKit.availability();
-    if (!avail.available) { if (manual) toast("Health data isn't available on this device"); return; }
-    const auth = await HealthKit.requestAuthorization({ read: requestKinds });
-    if (!auth.granted) { if (manual) toast("Apple Health access wasn't granted"); return; }
-    if (!kinds.length) { if (manual) toast("Access granted — turn on a type above to start syncing"); return; }
-    const sinceIso = h.lastSync || fromKey(addDays(todayKey(), -30)).toISOString();
-    let addedWeights = 0;
-    if (h.weight) {
-      const r = await HealthKit.queryWeight({ since: sinceIso });
-      for (const s of (r.samples || [])) {
-        if (state.weights.some((w) => w.ts === s.date)) continue; // already have this exact reading
-        state.weights.push({ d: toKey(new Date(s.date)), ts: s.date, kg: r1(s.kg), src: "health" });
-        addedWeights++;
-      }
-      if (addedWeights) state.weights.sort((a, b) => (a.ts < b.ts ? -1 : 1));
-    }
-    if (h.steps) {
-      const r = await HealthKit.querySteps({ since: sinceIso });
-      for (const d of (r.days || [])) {
-        const l = dayLog(d.date);
-        if (l.stepsSrc === "manual") continue;
-        l.steps = Math.round(d.steps); l.stepsSrc = "health";
-      }
-    }
-    if (h.sleep) {
-      const r = await HealthKit.querySleep({ since: sinceIso });
-      for (const d of (r.days || [])) {
-        const l = dayLog(d.date);
-        if (l.sleepSrc === "manual") continue;
-        l.sleepH = r1(d.hours); l.sleepSrc = "health";
-      }
-    }
-    h.lastSync = new Date().toISOString();
-    save();
-    renderHealthSettings();
-    if (currentView === "today") renderToday();
-    if (currentView === "progress") renderProgress();
-    if (currentView === "body") renderBody();
-    if (manual) toast(addedWeights ? `Synced — ${addedWeights} new weigh-in${addedWeights === 1 ? "" : "s"}` : "Synced with Apple Health");
-  } catch (e) {
-    if (manual) toast("Apple Health sync failed");
-  }
-}
 async function applyReminder() {
   const r = state.settings.reminder;
   const LN = window.capacitorLocalNotifications && window.capacitorLocalNotifications.LocalNotifications;
@@ -4587,7 +4726,6 @@ function startApp() {
   checkGoals();
   if (isNativeApp() && state.settings.reminder.enabled) applyReminder();
   if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
-  if (isNativeApp()) syncAppleHealth();
   maybeShowWhatsNew();
 }
 
