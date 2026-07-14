@@ -442,7 +442,10 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 /* Detailed Trend: the y-axis values sit in a pinned overlay on the right so
    they stay put while the wide chart scrolls underneath. */
 .detail-wrap { position: relative; }
-.detail-axis { position: absolute; top: 0; right: 0; pointer-events: none; background: linear-gradient(90deg, transparent, var(--bg) 55%); }
+/* Pin to its intrinsic 40px width — the generic `.chart svg { width:100% }`
+   rule would otherwise stretch this overlay full-width and (via height:auto)
+   blow its height up, spilling the axis labels over the cards below. */
+.chart .detail-axis { position: absolute; top: 0; right: 0; width: 40px; height: auto; pointer-events: none; background: linear-gradient(90deg, transparent, var(--bg) 55%); }
 .legend { display: flex; gap: 14px; margin-top: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .lg::before { content: "●"; margin-right: 5px; }
 .dot-raw::before { color: var(--muted2); } .dot-ma::before { color: var(--ma-color, var(--accent)); } .dot-goal::before { color: var(--amber); }

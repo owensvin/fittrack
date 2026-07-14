@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.7";
+const APP_VERSION = "3.7.1";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -772,6 +772,9 @@ const WHATS_NEW = {
     "Goal reached! Hitting a goal now gets a real moment — a full-screen celebration with how much you lost, how long it took, and your average pace, plus a \"Share as image\" card. It waits for you if a late weigh-in crosses the line while the app's closed.",
     "Backup reminders — your data lives only on this phone, so FitTrack now nudges you to export a copy when you've never backed up or it's been over 45 days. Settings shows when you last backed up. Dismissable, never naggy.",
     "New here after the recent updates? A one-time card on Today points out Insights, the weekly challenge, and where history lives — and every ⓘ now explains Insights, the adherence calendar, challenges, records, and the monthly recap.",
+  ],
+  "3.7.1": [
+    "Fixed Detailed Trend: the pinned y-axis was rendering as a giant number spilling over the whole page, and the chart opened at the oldest week instead of the newest. Both sorted — the axis sits quietly on the right and the chart opens on your most recent weigh-ins.",
   ],
 };
 function showWhatsNewSheet(version) {
@@ -3688,7 +3691,17 @@ function renderWeightFull() {
       ? detailedTrendChart({ entries, ma, pxPerDay: weightDetailZoom === "month" ? 340 / 30 : 340 / 7, zoom: weightDetailZoom })
       : `<div class="food-empty">Log at least 2 entries to see the chart.</div>`;
     const scroller = $("#weightDetailScroll");
-    if (scroller) scroller.scrollLeft = scroller.scrollWidth; // land on the most recent period
+    if (scroller) {
+      // Land on the most recent period. On first open this render runs while
+      // the sheet is still hidden (zero layout, scrollWidth 0, assignment
+      // no-ops), so repeat it right after the current task — by then the
+      // sheet has been unhidden by the caller. setTimeout, not rAF: rAF can
+      // stall when nothing is compositing (backgrounded webview, sheet
+      // mid-animation), a plain macrotask always runs.
+      const toEnd = () => { scroller.scrollLeft = scroller.scrollWidth; };
+      toEnd();
+      setTimeout(toEnd, 0);
+    }
   } else {
     const farGoal = shownGoals[shownGoals.length - 1];
     const projDays = farGoal ? Math.min(Math.max(0, daysBetween(todayKey(), farGoal.date)), Math.round(weightFullRange / 2)) : 0;
