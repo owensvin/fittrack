@@ -332,6 +332,10 @@ li.dragging { position: relative; z-index: 5; background: var(--card2); box-shad
 .fi-del .ic { width: 15px; height: 15px; }
 .fi-share { border: none; background: none; color: var(--muted2); cursor: pointer; padding: 4px 0 4px 8px; display: flex; }
 .fi-share .ic { width: 15px; height: 15px; }
+/* Save-to-my-foods on shared rows — stays visible (quick one-tap action),
+   unlike fi-edit/fi-del which hide behind the swipe. */
+.fi-save { border: none; background: none; color: var(--muted2); cursor: pointer; padding: 4px 0 4px 8px; display: flex; }
+.fi-save .ic { width: 15px; height: 15px; }
 
 /* ===== Training schedule ===== */
 .break-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card2); border-radius: var(--r-sm); padding: 8px 12px; margin-bottom: 10px; font-size: var(--fs-sm); font-weight: 600; }

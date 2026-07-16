@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.9.0";
+const APP_VERSION = "3.10.0";
 // Shared food library backend (Cloudflare Worker + D1 — see worker/README.md).
 // Empty string disables the feature: the Shared tab is hidden and the share
 // button on custom foods falls back to the old file export.
@@ -712,6 +712,11 @@ function obSummary() {
 // Shown once per version bump to an existing user (never on first install —
 // obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
 const WHATS_NEW = {
+  "3.10.0": [
+    "Display name — set yours under Settings → Profile; it's shown next to foods you publish so everyone can see who shared what.",
+    "Shared tab: pull down to refresh the list.",
+    "Shared tab: swipe a food left to edit or delete it — edits and deletes apply for everyone, and renaming is safe.",
+  ],
   "3.9.0": [
     "Build custom foods from real ingredients — start typing an ingredient name and pick from your custom foods, the shared library, the built-in database, or an Open Food Facts search. Macros fill in automatically; you just enter the amount.",
   ],
@@ -1737,6 +1742,33 @@ $("#foodSearch").addEventListener("input", () => {
 });
 $("#foodSearch").addEventListener("keydown", (e) => { if (e.key === "Enter" && sheetTab === "online") { e.preventDefault(); searchOFF(); } });
 
+// Pull-to-refresh on the Shared tab: drag the list down from the top and
+// release to refetch. The list follows the finger (damped) as the affordance;
+// #foodList is the scroll container so scrollTop===0 means "at the top".
+(() => {
+  const list = $("#foodList");
+  let startY = 0, pulling = false;
+  list.addEventListener("touchstart", (e) => {
+    pulling = sheetTab === "shared" && list.scrollTop <= 0;
+    if (pulling) startY = e.touches[0].clientY;
+  }, { passive: true });
+  list.addEventListener("touchmove", (e) => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || list.scrollTop > 0) { list.style.transform = ""; return; }
+    list.style.transition = "none";
+    list.style.transform = `translateY(${Math.min(dy / 2.5, 64)}px)`;
+  }, { passive: true });
+  list.addEventListener("touchend", (e) => {
+    if (!pulling) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    list.style.transition = "transform .2s var(--ease)";
+    list.style.transform = "";
+    if (dy > 110 && sheetTab === "shared") { haptic("light"); sharedFoods = null; renderSharedList(); }
+  });
+})();
+
 function allLocalFoods() { return [...state.customFoods, ...FOOD_DB]; }
 function renderFoodList() {
   if (sheetTab === "online") return renderOFFList();
@@ -1816,7 +1848,7 @@ async function fetchSharedFoods() {
   sharedLoading = true;
   try {
     const data = await (await fetch(SHARED_FOODS_API + "/foods")).json();
-    sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "" }));
+    sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, rid: r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "" }));
   } catch (e) { sharedFoods = null; }
   sharedLoading = false;
 }
@@ -1828,12 +1860,14 @@ function renderSharedList() {
   }
   const q = $("#foodSearch").value.trim().toLowerCase();
   const rows = q ? sharedFoods.filter((f) => f.name.toLowerCase().includes(q)) : sharedFoods;
-  if (!rows.length) { $("#foodList").innerHTML = `<div class="food-empty">${q ? "No match in the shared library." : "Nothing shared yet — publish one of your custom foods with its share button."}</div>`; return; }
+  if (!rows.length) { $("#foodList").innerHTML = `<div class="food-empty">${q ? "No match in the shared library." : "Nothing shared yet — publish one of your custom foods with its share button.<br>Pull down to refresh."}</div>`; return; }
   const shown = rows.slice(0, 80);
   $("#foodList").innerHTML = shown.map((f, i) => `<li class="food-row" data-i="${i}">
       <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${f.by ? " · by " + esc(f.by) : ""}${macroTags(f)}</div></div>
       <span class="fr-kcal">${r0(f.kcal)}</span>
-      <button class="fi-edit" data-savesh="${i}" title="Save to my custom foods"><span class="ic" data-ic="copy"></span></button>
+      <button class="fi-save" data-savesh="${i}" title="Save to my custom foods"><span class="ic" data-ic="copy"></span></button>
+      <button class="fi-edit" data-editsh="${i}"><span class="ic" data-ic="pencil"></span></button>
+      <button class="fi-del" data-delsh="${i}"><span class="ic" data-ic="x"></span></button>
     </li>`).join("");
   renderIcons($("#foodList"));
   $$("#foodList .food-row").forEach((li) => li.addEventListener("click", () => openDetail(shown[+li.dataset.i], "serving")));
@@ -1846,23 +1880,58 @@ function renderSharedList() {
     save(); haptic("light");
     toast(`Saved "${f.name}" to your custom foods`);
   }));
+  $$("#foodList [data-editsh]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); openEditSharedFood(shown[+b.dataset.editsh]); }));
+  $$("#foodList [data-delsh]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const f = shown[+b.dataset.delsh];
+    if (confirm(`Remove "${f.name}" from the shared library for everyone?`)) deleteSharedFood(f);
+  }));
+  makeSwipeable($("#foodList"));
 }
-async function publishFood(f) {
-  // One-time (skippable) name prompt so friends can see who shared what.
+async function deleteSharedFood(f) {
+  try {
+    const res = await fetch(`${SHARED_FOODS_API}/foods/${f.rid}`, { method: "DELETE" });
+    if (!res.ok && res.status !== 404) throw new Error("server error " + res.status);
+    sharedFoods = (sharedFoods || []).filter((x) => x.rid !== f.rid);
+    if (sheetTab === "shared") renderFoodList();
+    toast(`Removed "${f.name}" from the shared library`);
+  } catch (e) { toast("Delete failed: " + (e.message || "are you online?")); }
+}
+// Editing a shared food reuses the custom-food form, but saving publishes the
+// change back to the shared library (by row id, so renaming is safe) instead
+// of touching the local custom list.
+let editingSharedFood = null;
+function openEditSharedFood(f) {
+  openQuick("custom");
+  editingSharedFood = f;
+  $("#quickTitle").textContent = "Edit shared food";
+  $("#qName").value = f.name; $("#qKcal").value = f.kcal; $("#qProt").value = f.p || ""; $("#qCarb").value = f.c || ""; $("#qFat").value = f.f || "";
+  $("#qServing").value = f.serving || "";
+  $("#quickSave").textContent = "Update shared food";
+}
+// Publishes a food to the shared library. With `rid`, updates that existing
+// row in place (rename-safe); without, it's a new publish (same name upserts).
+// Returns true on success so callers can keep their sheet open on failure.
+async function publishFood(f, rid) {
+  // One-time (skippable) name prompt so friends can see who shared what —
+  // editable later under Settings → Profile → Display name.
   if (state.settings.shareName == null) {
     state.settings.shareName = (prompt("Name to show next to foods you publish (optional):") || "").trim().slice(0, 20);
     save();
   }
-  toast("Publishing…");
+  toast(rid ? "Updating…" : "Publishing…");
   try {
+    const body = { name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0, by: state.settings.shareName };
+    if (rid) body.id = rid;
     const res = await fetch(SHARED_FOODS_API + "/foods", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0, by: state.settings.shareName }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "server error " + res.status); }
     sharedFoods = null; // refetch next time the Shared tab opens
-    toast(`Published "${f.name}" to the shared library`);
-  } catch (e) { toast("Publish failed: " + (e.message || "are you online?")); }
+    toast(rid ? `Updated "${f.name}" in the shared library` : `Published "${f.name}" to the shared library`);
+    return true;
+  } catch (e) { toast((rid ? "Update" : "Publish") + " failed: " + (e.message || "are you online?")); return false; }
 }
 
 /* Open Food Facts */
@@ -2030,7 +2099,7 @@ function openQuick(mode, prefill) {
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
   $("#quickSave").textContent = mode === "edit" ? "Save changes" : "Save to library";
-  customIngredients = []; totalWTouched = false; servWTouched = false; editingCustomFoodId = null;
+  customIngredients = []; totalWTouched = false; servWTouched = false; editingCustomFoodId = null; editingSharedFood = null;
   setIngBasis("100g");
   ["ingName", "ingQty", "ingKcal", "ingProt", "ingCarb", "ingFat"].forEach((id) => ($("#" + id).value = ""));
   hideIngSuggest();
@@ -2278,6 +2347,18 @@ $("#quickSave").addEventListener("click", () => {
   if (quickMode === "custom") {
     food.serving = $("#qServing").value.trim() || (qCustomMode === "ingredients" && servingWeight ? `${servingWeight} g` : "1 serving");
     if (qCustomMode === "ingredients") food.ingredients = customIngredients;
+    if (editingSharedFood) {
+      // Shared-library edit: push the change to the server, leave local
+      // custom foods alone. Keep the sheet open if the update failed.
+      const target = editingSharedFood;
+      publishFood(food, target.rid).then((ok) => {
+        if (!ok) return;
+        editingSharedFood = null;
+        $("#quickSheet").classList.add("hidden");
+        if (sheetTab === "shared") renderFoodList();
+      });
+      return;
+    }
     if (editingCustomFoodId) {
       food.id = editingCustomFoodId;
       const idx = state.customFoods.findIndex((x) => x.id === editingCustomFoodId);
@@ -4630,6 +4711,7 @@ function renderSettings() {
   $("#setDob").value = p.birthDate || "";
   $("#setSex").value = p.sex;
   $("#setStartWeight").value = r1(p.startWeightKg);
+  $("#setShareName").value = state.settings.shareName || "";
   $("#setWeekStart").value = state.settings.weekStart || "mon";
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
@@ -4664,6 +4746,7 @@ function renderProfileSummary() {
   const rows = [
     { ic: "person", c: "t-blue", v: `${p.age} · ${p.sex === "male" ? "Male" : "Female"}`, k: "Age & sex" },
     { ic: "scale", c: "t-purple", v: `${r1(p.startWeightKg)} kg`, k: "Initial weight" },
+    { ic: "share", c: "t-green", v: state.settings.shareName ? esc(state.settings.shareName) : "Not set", k: "Display name" },
   ];
   $("#profileSummary").innerHTML = rows.map((r) => `<div class="stat-box"><span class="ic ${r.c}" data-ic="${r.ic}"></span><div class="v">${r.v}</div><div class="k">${r.k}</div></div>`).join("");
   renderIcons($("#profileSummary"));
@@ -4734,6 +4817,7 @@ $("#profileSave").addEventListener("click", () => {
   p.sex = $("#setSex").value;
   const sw = parseFloat($("#setStartWeight").value);
   if (sw > 0) p.startWeightKg = sw;
+  state.settings.shareName = $("#setShareName").value.trim().slice(0, 20);
   save(); toggleProfileForm(false); renderSettings(); renderToday(); toast("Profile saved");
 });
 $("#setWeekStart").addEventListener("change", () => {
