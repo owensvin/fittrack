@@ -712,6 +712,15 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 /* ===== Backup nudge ===== */
 .backup-banner { border-color: var(--amber); }
 .update-banner { border-color: var(--green); }
+
+/* Ingredient type-ahead (custom-food builder) */
+.ing-suggest { list-style: none; margin: 0 0 10px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.ing-suggest li { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; }
+.ing-suggest li + li { border-top: 1px solid var(--border); }
+.ing-suggest li:active { background: var(--card2); }
+.ing-suggest .is-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ing-suggest .is-sub { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
+.ing-suggest .is-src { font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--border); border-radius: var(--r-full); padding: 1px 7px; }
 .backup-row { display: flex; gap: 10px; align-items: flex-start; }
 .backup-row .ic { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; }
 .backup-row p { font-size: var(--fs-sm); line-height: 1.45; }

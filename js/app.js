@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.8.0";
+const APP_VERSION = "3.9.0";
 // Shared food library backend (Cloudflare Worker + D1 — see worker/README.md).
 // Empty string disables the feature: the Shared tab is hidden and the share
 // button on custom foods falls back to the old file export.
@@ -712,6 +712,9 @@ function obSummary() {
 // Shown once per version bump to an existing user (never on first install —
 // obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
 const WHATS_NEW = {
+  "3.9.0": [
+    "Build custom foods from real ingredients — start typing an ingredient name and pick from your custom foods, the shared library, the built-in database, or an Open Food Facts search. Macros fill in automatically; you just enter the amount.",
+  ],
   "3.8.0": [
     "Shared food library — a new Shared tab in the food sheet lists foods published by any FitTrack user. Tap to log one, or use its copy button to save it into your own custom foods.",
     "One-tap food sharing — the share button on a custom food now publishes it straight to the shared library (no more exporting/importing JSON files). Republishing the same name fixes its values.",
@@ -2027,9 +2030,10 @@ function openQuick(mode, prefill) {
   ["qName", "qKcal", "qProt", "qCarb", "qFat", "qServing", "mealTotalWeight", "mealServingWeight"].forEach((id) => ($("#" + id).value = ""));
   if (prefill) { $("#qName").value = prefill.name || ""; $("#qKcal").value = prefill.kcal || ""; $("#qProt").value = prefill.p || ""; $("#qCarb").value = prefill.c || ""; $("#qFat").value = prefill.f || ""; }
   $("#quickSave").textContent = mode === "edit" ? "Save changes" : "Save to library";
-  customIngredients = []; ingBasis = "100g"; totalWTouched = false; servWTouched = false; editingCustomFoodId = null;
-  $$("#ingBasisChips button").forEach((b) => b.classList.toggle("active", b.dataset.basis === "100g"));
-  $("#ingQtyLabelText").textContent = "Qty (g)"; $("#ingQty").placeholder = "100";
+  customIngredients = []; totalWTouched = false; servWTouched = false; editingCustomFoodId = null;
+  setIngBasis("100g");
+  ["ingName", "ingQty", "ingKcal", "ingProt", "ingCarb", "ingFat"].forEach((id) => ($("#" + id).value = ""));
+  hideIngSuggest();
   setCalUnit("kcal");
   setQCustomMode("simple");
   renderIngredientList();
@@ -2040,6 +2044,9 @@ function setQCustomMode(m) {
   $$("#qCustomModeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.val === m));
   $("#qSimpleFields").classList.toggle("hidden", m !== "simple");
   $("#qIngredientsFields").classList.toggle("hidden", m !== "ingredients");
+  // Warm the shared-library cache so its foods appear in the ingredient
+  // type-ahead without a visible wait on first keystroke.
+  if (m === "ingredients" && SHARED_FOODS_API && sharedFoods === null && !sharedLoading) fetchSharedFoods();
 }
 $("#qCustomModeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
@@ -2054,12 +2061,82 @@ document.addEventListener("click", (e) => {
   if (b) setCalUnit(b.dataset.u);
 });
 function toKcal(raw) { return calUnit === "kj" ? raw / KJ_PER_KCAL : raw; }
-$("#ingBasisChips").addEventListener("click", (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  ingBasis = b.dataset.basis;
-  $$("#ingBasisChips button").forEach((x) => x.classList.toggle("active", x === b));
+function setIngBasis(basis) {
+  ingBasis = basis;
+  $$("#ingBasisChips button").forEach((x) => x.classList.toggle("active", x.dataset.basis === basis));
   $("#ingQtyLabelText").textContent = ingBasis === "100g" ? "Qty (g)" : "Servings";
   $("#ingQty").placeholder = ingBasis === "100g" ? "100" : "1";
+}
+$("#ingBasisChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  setIngBasis(b.dataset.basis);
+});
+
+/* Ingredient type-ahead: pick any known food (custom, shared library,
+   built-in DB, or an on-demand Open Food Facts search) as an ingredient
+   instead of typing its macros by hand. Picking fills the macro fields —
+   per-100g when the food's gram weight is known, per-serving otherwise —
+   leaving only the quantity to enter. */
+let ingSuggestTimer = null;
+function ingSuggestSources() {
+  const seen = new Set(), out = [];
+  const push = (f, src) => { const k = f.name.toLowerCase(); if (!f.name || seen.has(k)) return; seen.add(k); out.push({ f, src }); };
+  state.customFoods.forEach((f) => push(f, "Custom"));
+  (sharedFoods || []).forEach((f) => push(f, "Shared"));
+  FOOD_DB.forEach((f) => push(f, "Library"));
+  return out;
+}
+function hideIngSuggest() { $("#ingSuggest").classList.add("hidden"); $("#ingSuggest").innerHTML = ""; }
+function renderIngSuggest() {
+  const q = $("#ingName").value.trim().toLowerCase();
+  if (q.length < 2) return hideIngSuggest();
+  const rows = ingSuggestSources().filter((r) => r.f.name.toLowerCase().includes(q)).slice(0, 6);
+  const el = $("#ingSuggest");
+  el.innerHTML = rows.map((r, i) =>
+    `<li data-pick="${i}"><span class="is-name">${esc(r.f.name)}</span><span class="is-sub">${esc(r.f.serving || "per 100 g")} · ${r0(r.f.kcal)} kcal</span><span class="is-src">${r.src}</span></li>`).join("")
+    + `<li data-off="1"><span class="is-name muted">Search online for “${esc($("#ingName").value.trim())}”…</span><span class="is-src">Online</span></li>`;
+  el.classList.remove("hidden");
+  $$("#ingSuggest [data-pick]").forEach((li) => li.addEventListener("click", () => applyIngPick(rows[+li.dataset.pick].f, false)));
+  const off = el.querySelector("[data-off]");
+  if (off) off.addEventListener("click", () => ingSearchOFF($("#ingName").value.trim()));
+}
+async function ingSearchOFF(q) {
+  const el = $("#ingSuggest");
+  el.innerHTML = `<li><span class="is-name muted">Searching Open Food Facts…</span></li>`;
+  let results;
+  try {
+    const url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=8&fields=product_name,brands,nutriments&search_terms=" + encodeURIComponent(q);
+    const data = await (await fetch(url)).json();
+    results = (data.products || []).filter((p) => p.product_name && p.nutriments && p.nutriments["energy-kcal_100g"] != null)
+      .map((p) => ({ name: p.product_name.slice(0, 60), brand: (p.brands || "").split(",")[0], kcal: +p.nutriments["energy-kcal_100g"] || 0, p: +p.nutriments["proteins_100g"] || 0, c: +p.nutriments["carbohydrates_100g"] || 0, f: +p.nutriments["fat_100g"] || 0 }));
+  } catch (e) { el.innerHTML = `<li><span class="is-name muted">Search failed — are you online?</span></li>`; return; }
+  if (!results.length) { el.innerHTML = `<li><span class="is-name muted">No online match for “${esc(q)}”.</span></li>`; return; }
+  el.innerHTML = results.map((f, i) =>
+    `<li data-pick="${i}"><span class="is-name">${esc(f.name)}</span><span class="is-sub">${esc(f.brand || "per 100 g")} · ${r0(f.kcal)} kcal</span><span class="is-src">Online</span></li>`).join("");
+  $$("#ingSuggest [data-pick]").forEach((li) => li.addEventListener("click", () => applyIngPick(results[+li.dataset.pick], true)));
+}
+function applyIngPick(f, per100) {
+  const g = per100 ? 100 : servingGrams(f);
+  // Values are filled as kcal, so make sure the unit toggle agrees.
+  setCalUnit("kcal");
+  $("#ingName").value = f.name;
+  if (g) {
+    // Known gram weight — normalize to per-100g so quantity is entered in grams.
+    const k = 100 / g;
+    setIngBasis("100g");
+    $("#ingKcal").value = r1(f.kcal * k); $("#ingProt").value = r1((f.p || 0) * k); $("#ingCarb").value = r1((f.c || 0) * k); $("#ingFat").value = r1((f.f || 0) * k);
+    $("#ingQty").value = "";
+  } else {
+    setIngBasis("serving");
+    $("#ingKcal").value = r1(f.kcal); $("#ingProt").value = r1(f.p || 0); $("#ingCarb").value = r1(f.c || 0); $("#ingFat").value = r1(f.f || 0);
+    $("#ingQty").value = 1;
+  }
+  hideIngSuggest();
+  $("#ingQty").focus();
+}
+$("#ingName").addEventListener("input", () => {
+  clearTimeout(ingSuggestTimer);
+  ingSuggestTimer = setTimeout(renderIngSuggest, 150);
 });
 function ingredientTotals() {
   return customIngredients.reduce((s, ing) => ({ kcal: s.kcal + ing.kcal, p: s.p + ing.p, c: s.c + ing.c, f: s.f + ing.f }), { kcal: 0, p: 0, c: 0, f: 0 });
@@ -2107,6 +2184,7 @@ $("#ingAddBtn").addEventListener("click", () => {
   const factor = ingBasis === "100g" ? qty / 100 : qty;
   customIngredients.push({ name, basis: ingBasis, qty, kcal: kcal * factor, p: p * factor, c: c * factor, f: f * factor });
   ["ingName", "ingQty", "ingKcal", "ingProt", "ingCarb", "ingFat"].forEach((id) => ($("#" + id).value = ""));
+  hideIngSuggest();
   renderIngredientList();
 });
 function openEditFood(mealId, i) {

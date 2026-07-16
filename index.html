@@ -708,8 +708,9 @@
         <div class="hidden" id="qIngredientsFields">
           <ul class="entry-list ingredient-list" id="ingredientList"></ul>
           <div class="form-grid">
-            <label>Ingredient name <input type="text" id="ingName" placeholder="e.g. Chicken breast"></label>
+            <label>Ingredient name <input type="text" id="ingName" placeholder="e.g. Chicken breast" autocomplete="off"></label>
           </div>
+          <ul class="ing-suggest hidden" id="ingSuggest"></ul>
           <div class="chips" id="ingBasisChips">
             <button data-basis="100g" class="active">per 100g</button>
             <button data-basis="serving">per serving</button>
