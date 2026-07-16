@@ -138,6 +138,18 @@
         </div>
       </section>
 
+      <!-- New-version nudge (only when the repo's version is ahead of this build) -->
+      <section class="card update-banner hidden" id="updateBanner">
+        <div class="backup-row">
+          <span class="ic t-green" data-ic="sparkle"></span>
+          <p id="updateBannerText"></p>
+        </div>
+        <div class="backup-actions">
+          <button class="btn small" id="updateOpenBtn">Open SideStore</button>
+          <button class="btn small ghost" id="updateDismissBtn">Dismiss</button>
+        </div>
+      </section>
+
       <!-- One-time orientation card -->
       <section class="card hidden" id="tourCard">
         <div class="card-head"><h3><span class="ic t-blue" data-ic="sparkle"></span>Finding your way around</h3></div>
@@ -545,6 +557,7 @@
         <button data-tab="recent">Recents</button>
         <button data-tab="fav">Favorites</button>
         <button data-tab="custom">Custom</button>
+        <button data-tab="shared">Shared</button>
         <button data-tab="online">Online</button>
       </div>
       <div id="foodList" class="food-list"></div>

@@ -1,0 +1,8 @@
+name = "fittrack-foods"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fittrack-foods"
+database_id = "51c79883-45e7-420a-a601-d45618f13149"

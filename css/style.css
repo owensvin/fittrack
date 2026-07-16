@@ -711,6 +711,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 
 /* ===== Backup nudge ===== */
 .backup-banner { border-color: var(--amber); }
+.update-banner { border-color: var(--green); }
 .backup-row { display: flex; gap: 10px; align-items: flex-start; }
 .backup-row .ic { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; }
 .backup-row p { font-size: var(--fs-sm); line-height: 1.45; }

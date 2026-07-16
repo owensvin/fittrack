@@ -10,7 +10,14 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.7.1";
+const APP_VERSION = "3.8.0";
+// Shared food library backend (Cloudflare Worker + D1 — see worker/README.md).
+// Empty string disables the feature: the Shared tab is hidden and the share
+// button on custom foods falls back to the old file export.
+const SHARED_FOODS_API = "https://fittrack-foods.owensvin.workers.dev";
+// Raw package.json on main — its "version" runs ahead of APP_VERSION whenever
+// a new build has been pushed that this install doesn't have yet.
+const UPDATE_CHECK_URL = "https://raw.githubusercontent.com/owensvin/fittrack/main/package.json";
 
 function toKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -315,7 +322,7 @@ function defaultState() {
     trainingSchedule: defaultTrainingSchedule(),
     trainingBreak: null, // {from, until} date-key range; overrides the weekly pattern without editing it
     workoutNotifs: {}, // workoutId -> {enabled, time}
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, tourDismissed: false, lastBackup: null, backupSnoozeUntil: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, tourDismissed: false, lastBackup: null, backupSnoozeUntil: null, shareName: null, updateAvail: null, updateDismissed: null, lastUpdateCheck: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -339,6 +346,10 @@ function loadState() {
       if (s.settings.tourDismissed === undefined) s.settings.tourDismissed = false;
       if (s.settings.lastBackup === undefined) s.settings.lastBackup = null;
       if (s.settings.backupSnoozeUntil === undefined) s.settings.backupSnoozeUntil = null;
+      if (s.settings.shareName === undefined) s.settings.shareName = null;
+      if (s.settings.updateAvail === undefined) s.settings.updateAvail = null;
+      if (s.settings.updateDismissed === undefined) s.settings.updateDismissed = null;
+      if (s.settings.lastUpdateCheck === undefined) s.settings.lastUpdateCheck = null;
       if (s.challenge === undefined) s.challenge = null;
       if (s.pendingCelebration === undefined) s.pendingCelebration = null;
       if (!s.foodServingOverrides) s.foodServingOverrides = {};
@@ -701,6 +712,12 @@ function obSummary() {
 // Shown once per version bump to an existing user (never on first install —
 // obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
 const WHATS_NEW = {
+  "3.8.0": [
+    "Shared food library — a new Shared tab in the food sheet lists foods published by any FitTrack user. Tap to log one, or use its copy button to save it into your own custom foods.",
+    "One-tap food sharing — the share button on a custom food now publishes it straight to the shared library (no more exporting/importing JSON files). Republishing the same name fixes its values.",
+    "Update alerts — Today shows a banner when a newer FitTrack build is out, with a button that jumps straight to SideStore. No more manual checking.",
+    "Fixed: reopening the app on a new day could still show yesterday as \"Today\" until a restart — it now rolls over the moment the app comes back to the foreground.",
+  ],
   "3.0": [
     "Apple Health sync — pull weight, steps, and sleep in automatically (Settings → Apple Health), read-only.",
     "Breakfast, Lunch, Dinner, and Snacks are now one list on Today, grouped under subheaders with icons and a per-category total, auto-categorized by the time you log — snacks are a toggle instead, since they don't belong to a time window.",
@@ -1100,6 +1117,7 @@ function renderToday() {
   renderChallenge();
   renderTour();
   renderBackupBanner();
+  renderUpdateBanner();
 }
 // One-time orientation card — only on today, only until dismissed, and only
 // once there's some history so it doesn't greet a brand-new user mid-onboarding.
@@ -1138,6 +1156,38 @@ $("#backupNowBtn").addEventListener("click", () => $("#exportBtn").click());
 $("#backupLaterBtn").addEventListener("click", () => {
   state.settings.backupSnoozeUntil = addDays(todayKey(), BACKUP_SNOOZE_DAYS);
   save(); haptic("light"); $("#backupBanner").classList.add("hidden");
+});
+// New-version nudge: the repo's package.json version leads APP_VERSION as soon
+// as a release is pushed, so the app can tell you instead of you polling
+// SideStore. Checked at most every few hours, silent when offline.
+const UPDATE_CHECK_EVERY_H = 6;
+function cmpVer(a, b) {
+  const pa = String(a).split("."), pb = String(b).split(".");
+  for (let i = 0; i < 3; i++) { const d = (+pa[i] || 0) - (+pb[i] || 0); if (d) return d; }
+  return 0;
+}
+async function checkForUpdate() {
+  const last = state.settings.lastUpdateCheck;
+  if (last && Date.now() - new Date(last).getTime() < UPDATE_CHECK_EVERY_H * 3600e3) return;
+  try {
+    const pkg = await (await fetch(UPDATE_CHECK_URL, { cache: "no-store" })).json();
+    if (!pkg || !pkg.version) return;
+    state.settings.lastUpdateCheck = new Date().toISOString();
+    state.settings.updateAvail = cmpVer(pkg.version, APP_VERSION) > 0 ? pkg.version : null;
+    save(); renderUpdateBanner();
+  } catch (_) { /* offline — try again next launch/resume */ }
+}
+function renderUpdateBanner() {
+  const v = state.settings.updateAvail;
+  // cmpVer guard also hides a stale banner right after the update installs.
+  const show = viewDate === todayKey() && !!v && cmpVer(v, APP_VERSION) > 0 && state.settings.updateDismissed !== v;
+  $("#updateBanner").classList.toggle("hidden", !show);
+  if (show) $("#updateBannerText").textContent = `FitTrack v${v} is available (you're on v${APP_VERSION}). Open SideStore and tap Update.`;
+}
+$("#updateOpenBtn").addEventListener("click", () => { haptic("light"); location.href = "sidestore://"; });
+$("#updateDismissBtn").addEventListener("click", () => {
+  state.settings.updateDismissed = state.settings.updateAvail;
+  save(); haptic("light"); $("#updateBanner").classList.add("hidden");
 });
 function backupStatusText() {
   const age = backupAgeDays();
@@ -1654,6 +1704,11 @@ $("#exAdd").addEventListener("click", () => {
 
 /* ---------- food sheet ---------- */
 let sheetMeal = "breakfast", sheetTab = "all", offResults = [], offLoading = false;
+// Shared food library (worker/ backend). Cached per app run; a publish clears
+// the cache so the tab refetches. Tab is removed outright when no backend is
+// configured, so nothing else needs to guard on SHARED_FOODS_API.
+let sharedFoods = null, sharedLoading = false;
+if (!SHARED_FOODS_API) { const b = $('#foodTabs button[data-tab="shared"]'); if (b) b.remove(); }
 // sheetMeal is set right before addFoodItem() — auto-categorized from time
 // (or the "This is a snack" toggle) at the actual log step, or from the
 // current time for one-tap quick-row re-adds — never picked manually.
@@ -1682,6 +1737,7 @@ $("#foodSearch").addEventListener("keydown", (e) => { if (e.key === "Enter" && s
 function allLocalFoods() { return [...state.customFoods, ...FOOD_DB]; }
 function renderFoodList() {
   if (sheetTab === "online") return renderOFFList();
+  if (sheetTab === "shared") return renderSharedList();
   const q = $("#foodSearch").value.trim().toLowerCase();
   let rows = [];
   if (sheetTab === "all") rows = allLocalFoods();
@@ -1722,7 +1778,12 @@ function renderFoodList() {
     $$("#foodList .fi-share").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
       const f = state.customFoods.find((x) => x.id === b.dataset.share);
-      if (f) shareItem(`fittrack-food-${slugify(f.name)}.json`, { fittrackShare: "food", version: 1, food: { name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f } }, "FitTrack Food");
+      if (!f) return;
+      // With a shared-library backend configured, sharing means publishing
+      // there (one tap, everyone gets it); the JSON file export only remains
+      // as the no-backend fallback.
+      if (SHARED_FOODS_API) publishFood(f);
+      else shareItem(`fittrack-food-${slugify(f.name)}.json`, { fittrackShare: "food", version: 1, food: { name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f } }, "FitTrack Food");
     }));
     $$("#foodList .fi-edit").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); openEditCustomFood(b.dataset.editc); }));
     $$("#foodList .fi-del").forEach((b) => b.addEventListener("click", (e) => {
@@ -1745,6 +1806,60 @@ function renderFoodList() {
     if (fav) { const ix = state.favs.indexOf(fav); ix >= 0 ? state.favs.splice(ix, 1) : state.favs.push(fav); save(); renderFoodList(); return; }
     openDetail(shown[+el.dataset.i], "serving");
   }));
+}
+
+/* Shared food library */
+async function fetchSharedFoods() {
+  sharedLoading = true;
+  try {
+    const data = await (await fetch(SHARED_FOODS_API + "/foods")).json();
+    sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "" }));
+  } catch (e) { sharedFoods = null; }
+  sharedLoading = false;
+}
+function renderSharedList() {
+  if (sharedLoading) { $("#foodList").innerHTML = `<div class="food-empty">Loading shared foods…</div>`; return; }
+  if (sharedFoods === null) {
+    fetchSharedFoods().then(() => { if (sheetTab === "shared") sharedFoods === null ? ($("#foodList").innerHTML = `<div class="food-empty">Couldn't reach the shared library — are you online?</div>`) : renderSharedList(); });
+    return renderSharedList(); // shows the loading state
+  }
+  const q = $("#foodSearch").value.trim().toLowerCase();
+  const rows = q ? sharedFoods.filter((f) => f.name.toLowerCase().includes(q)) : sharedFoods;
+  if (!rows.length) { $("#foodList").innerHTML = `<div class="food-empty">${q ? "No match in the shared library." : "Nothing shared yet — publish one of your custom foods with its share button."}</div>`; return; }
+  const shown = rows.slice(0, 80);
+  $("#foodList").innerHTML = shown.map((f, i) => `<li class="food-row" data-i="${i}">
+      <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${f.by ? " · by " + esc(f.by) : ""}${macroTags(f)}</div></div>
+      <span class="fr-kcal">${r0(f.kcal)}</span>
+      <button class="fi-edit" data-savesh="${i}" title="Save to my custom foods"><span class="ic" data-ic="copy"></span></button>
+    </li>`).join("");
+  renderIcons($("#foodList"));
+  $$("#foodList .food-row").forEach((li) => li.addEventListener("click", () => openDetail(shown[+li.dataset.i], "serving")));
+  $$("#foodList [data-savesh]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const f = shown[+b.dataset.savesh];
+    const existing = state.customFoods.find((c) => c.name.toLowerCase() === f.name.toLowerCase());
+    if (existing) Object.assign(existing, { serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f });
+    else state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f });
+    save(); haptic("light");
+    toast(`Saved "${f.name}" to your custom foods`);
+  }));
+}
+async function publishFood(f) {
+  // One-time (skippable) name prompt so friends can see who shared what.
+  if (state.settings.shareName == null) {
+    state.settings.shareName = (prompt("Name to show next to foods you publish (optional):") || "").trim().slice(0, 20);
+    save();
+  }
+  toast("Publishing…");
+  try {
+    const res = await fetch(SHARED_FOODS_API + "/foods", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0, by: state.settings.shareName }),
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "server error " + res.status); }
+    sharedFoods = null; // refetch next time the Shared tab opens
+    toast(`Published "${f.name}" to the shared library`);
+  } catch (e) { toast("Publish failed: " + (e.message || "are you online?")); }
 }
 
 /* Open Food Facts */
@@ -4903,7 +5018,30 @@ function startApp() {
   if (isNativeApp() && state.settings.weeklyReview.enabled) applyWeeklyReview();
   maybeShowWhatsNew();
   maybeShowCelebration(); // resurface an undismissed goal celebration from last session
+  checkForUpdate();
 }
+
+// iOS keeps the webview alive in the background for days, so an app reopened
+// the next morning still had yesterday as "Today" — viewDate and every
+// today-anchored render are only computed at script load. On every return to
+// the foreground, detect the day rollover and re-render.
+let lastActiveDay = todayKey();
+function handleAppResume() {
+  checkForUpdate(); // self-throttled
+  const now = todayKey();
+  if (now === lastActiveDay || !state.profile) { lastActiveDay = now; return; }
+  // Snap to the new today unless the user had deliberately navigated to an
+  // older day — browsing history should survive a backgrounding.
+  if (viewDate >= lastActiveDay) viewDate = now;
+  lastActiveDay = now;
+  maybeAutoAdjust(); checkGoals();
+  if (currentView === "today") renderToday();
+  else if (currentView === "progress") renderProgress();
+  else if (currentView === "training") renderTraining();
+  else if (currentView === "body") renderBody();
+  else if (currentView === "settings") renderSettings();
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") handleAppResume(); });
 
 renderIcons();
 if (state.profile) { applyTheme(); startApp(); } else { showOnboarding(); }
