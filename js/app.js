@@ -1935,15 +1935,20 @@ async function publishFood(f, rid) {
 }
 
 /* Open Food Facts */
+// Shared fetch+normalize for every OFF search surface (Online tab, ingredient
+// type-ahead). Values are per 100 g; entries without calories are dropped.
+async function offQuery(q, pageSize) {
+  const url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=" + pageSize + "&fields=product_name,brands,nutriments&search_terms=" + encodeURIComponent(q);
+  const data = await (await fetch(url)).json();
+  return (data.products || []).filter((p) => p.product_name && p.nutriments && p.nutriments["energy-kcal_100g"] != null)
+    .map((p) => ({ name: p.product_name.slice(0, 60), brand: (p.brands || "").split(",")[0], kcal: +p.nutriments["energy-kcal_100g"] || 0, p: +p.nutriments["proteins_100g"] || 0, c: +p.nutriments["carbohydrates_100g"] || 0, f: +p.nutriments["fat_100g"] || 0 }));
+}
 async function searchOFF() {
   const q = $("#foodSearch").value.trim();
   if (!q) { $("#foodList").innerHTML = `<div class="food-empty">Type a food name to search Open Food Facts.</div>`; return; }
   offLoading = true; $("#foodList").innerHTML = `<div class="food-empty">Searching…</div>`;
   try {
-    const url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=25&fields=product_name,brands,nutriments&search_terms=" + encodeURIComponent(q);
-    const data = await (await fetch(url)).json();
-    offResults = (data.products || []).filter((p) => p.product_name && p.nutriments && p.nutriments["energy-kcal_100g"] != null)
-      .map((p) => ({ name: p.product_name.slice(0, 60), brand: (p.brands || "").split(",")[0], kcal: +p.nutriments["energy-kcal_100g"] || 0, p: +p.nutriments["proteins_100g"] || 0, c: +p.nutriments["carbohydrates_100g"] || 0, f: +p.nutriments["fat_100g"] || 0 }));
+    offResults = await offQuery(q, 25);
   } catch (e) { offResults = []; $("#foodList").innerHTML = `<div class="food-empty">Search failed — are you online?</div>`; offLoading = false; return; }
   offLoading = false; renderOFFList();
 }
@@ -2174,10 +2179,7 @@ async function ingSearchOFF(q) {
   el.innerHTML = `<li><span class="is-name muted">Searching Open Food Facts…</span></li>`;
   let results;
   try {
-    const url = "https://world.openfoodfacts.org/cgi/search.pl?action=process&search_simple=1&json=1&page_size=8&fields=product_name,brands,nutriments&search_terms=" + encodeURIComponent(q);
-    const data = await (await fetch(url)).json();
-    results = (data.products || []).filter((p) => p.product_name && p.nutriments && p.nutriments["energy-kcal_100g"] != null)
-      .map((p) => ({ name: p.product_name.slice(0, 60), brand: (p.brands || "").split(",")[0], kcal: +p.nutriments["energy-kcal_100g"] || 0, p: +p.nutriments["proteins_100g"] || 0, c: +p.nutriments["carbohydrates_100g"] || 0, f: +p.nutriments["fat_100g"] || 0 }));
+    results = await offQuery(q, 8);
   } catch (e) { el.innerHTML = `<li><span class="is-name muted">Search failed — are you online?</span></li>`; return; }
   if (!results.length) { el.innerHTML = `<li><span class="is-name muted">No online match for “${esc(q)}”.</span></li>`; return; }
   el.innerHTML = results.map((f, i) =>

@@ -9,6 +9,7 @@ For feature history, architecture decisions, and past bugs/gotchas, see the auto
 - **Two GitHub accounts exist on this machine**: `owensvin` (owns this repo) and `deknared` (the user's main account, unrelated). Before pushing, check `gh auth status` — if `owensvin` isn't the active account, run `gh auth switch --hostname github.com --user owensvin` first (do NOT do a raw `gh auth login` interactive flow yourself — that requires a browser/interactive step; ask the user to run it if `owensvin` isn't already a known account).
 - **Never handle a raw GitHub token/PAT directly** — not as a literal in a Bash command, not written to a file, not piped. The sandbox's credential-leakage guard blocks this categorically regardless of technique, and retrying with a different trick won't work. If a token-based approach is needed, stop and ask the user to set up `gh auth` themselves instead.
 - Once `owensvin` is the active `gh` account, a plain `git push origin main` works with no credentials in the command at all.
+- **After pushing, switch back**: `gh auth switch --hostname github.com --user deknared` — the user's other projects need `deknared` active, and leaving `owensvin` active has broken their other sessions before. Chain it into the same command as the push.
 - **After pushing, do NOT poll the Actions build for completion/outcome** — it wastes tokens for no benefit. Just fetch and share the direct run URL once (e.g. via the GitHub API or `gh run list`), then stop. The user checks it themselves.
 - **Before shipping any version bump**: bump `package.json` `"version"` AND the `APP_VERSION` const in `js/app.js` AND add a matching entry to the `WHATS_NEW` object in `js/app.js`. SideStore compares `source.json`'s version against the IPA's actual version — if they don't match (or didn't change), install fails or silently doesn't update.
 - **"Production sweep" before pushing a release**: before committing a version bump, sweep for regressions/leftovers —
@@ -29,5 +30,13 @@ For feature history, architecture decisions, and past bugs/gotchas, see the auto
 ## Preview / testing
 
 - CSS/JS/HTML edits need a cache-bust on reload: `location.href = '/index.html?v=' + Date.now()` — plain `location.reload()` can serve a stale cached copy of `css/style.css` or large JS/asset files.
-- `preview_screenshot` occasionally hangs (known flaky tool in this environment, not a real app issue) — if it times out, restart the preview server (`preview_stop` + `preview_start`) and continue with `preview_eval`/`preview_snapshot` in the meantime; both are reliable substitutes for verifying DOM/state/computed styles.
+- The preview screenshot action occasionally hangs (known flaky in this environment, not a real app issue) — if it times out, don't retry it in a loop; verify via JS evaluation (DOM state, `getBoundingClientRect`, `getComputedStyle`) and the accessibility-tree read instead, both of which are reliable substitutes.
+- Native `confirm()`/`alert()`/`prompt()` block the automation tab indefinitely — never click a confirm-guarded button in the preview; call the underlying function directly.
+- localStorage seed data does NOT persist across sessions — re-seed a test profile each session, and clear it (`localStorage.removeItem("fittrack")`) when done.
 - Always verify UI changes actually render/behave correctly via the preview tools before reporting a UI task done — don't rely on reading the code alone.
+
+## Shared food library backend (worker/)
+
+- Live Cloudflare Worker + D1: `https://fittrack-foods.owensvin.workers.dev` (Cloudflare account = the owensvin GitHub login; wrangler is already authed on this machine). `SHARED_FOODS_API` in `js/app.js` points at it — empty string turns the whole feature off in the app.
+- Redeploy after editing `worker/src/index.js`: `npx wrangler deploy` from `worker/`. **Deploys propagate over ~30s and requests can hit a MIX of old and new versions in that window** — if endpoint tests look impossible right after a deploy, wait and re-test before debugging.
+- Moderation/fixes: `npx wrangler d1 execute fittrack-foods --remote --command "..."` from `worker/`. **The library has real user data now — delete test rows by id, never `DELETE FROM foods` wholesale.**

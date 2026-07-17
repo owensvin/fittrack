@@ -27,7 +27,7 @@ const source = {
     subtitle: "Calorie, weight & habit tracker",
     localizedDescription: "Personal calorie, weight and habit tracker with rings, streaks, supplements, walk tracking and dual goals.",
     iconURL,
-    tintColor: "215cda",
+    tintColor: "08c343",
     category: "lifestyle",
     versions: [{
       version,
