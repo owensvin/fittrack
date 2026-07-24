@@ -2,6 +2,11 @@ name = "fittrack-foods"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
+# Daily snapshot of the foods table into the `backups` table (see scheduled()
+# in src/index.js) so an accidental or malicious delete is recoverable.
+[triggers]
+crons = ["0 15 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "fittrack-foods"
