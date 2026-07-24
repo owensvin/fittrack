@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.10.0";
+const APP_VERSION = "3.10.1";
 // Shared food library backend (Cloudflare Worker + D1 — see worker/README.md).
 // Empty string disables the feature: the Shared tab is hidden and the share
 // button on custom foods falls back to the old file export.
@@ -376,7 +376,44 @@ function loadState() {
   } catch (e) { /* corrupt/unreadable localStorage — fall back to a fresh state */ }
   return defaultState();
 }
-function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+// A full-storage device would otherwise throw out of every handler that saves
+// (mid-render, with the change already applied in memory but never persisted).
+// Catch it and say so instead — the user can export a backup and clear space.
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+  catch (e) { toast("Couldn't save — device storage is full. Export a backup, then free up space."); }
+}
+// Ids only need to be unique and opaque; a counter keeps a loop that saves
+// several foods inside one millisecond from handing out the same id twice.
+let foodIdSeq = 0;
+function newFoodId() { return "c" + Date.now() + "-" + foodIdSeq++; }
+// Adds a food to the custom library, or refreshes the existing entry with the
+// same (case-insensitive) name in place, so re-scanning or re-describing a
+// food updates its numbers instead of piling up duplicates. The stored name
+// keeps its original capitalization.
+function upsertCustomFood(food) {
+  const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
+  if (existing) { const { name, ...rest } = food; Object.assign(existing, rest); return existing; }
+  const entry = { id: newFoodId(), ...food };
+  state.customFoods.unshift(entry);
+  return entry;
+}
+// Least-squares slope of a [{d: dateKey, v}] series, in units per day
+// (negative = falling). Null when the points are all on one date.
+function linRegSlope(pts) {
+  const x0 = pts[0].d, xs = pts.map((p) => daysBetween(x0, p.d)), ys = pts.map((p) => p.v);
+  const n = xs.length, sx = xs.reduce((a, b) => a + b), sy = ys.reduce((a, b) => a + b);
+  const sxy = xs.reduce((s, x, i) => s + x * ys[i], 0), sxx = xs.reduce((s, x) => s + x * x, 0);
+  const den = n * sxx - sx * sx;
+  return den ? (n * sxy - sx * sy) / den : null;
+}
+// Shared-library requests get a hard timeout — without one a hung connection
+// leaves the Shared tab stuck on "Loading…" with no way back.
+function apiFetch(url, opts = {}, ms = 10000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+}
 
 function dayLog(k) {
   if (!state.logs[k]) state.logs[k] = { meals: { breakfast: [], lunch: [], dinner: [], snacks: [] }, waterMl: 0, walks: [], supps: {} };
@@ -422,12 +459,8 @@ function adaptiveExpenditure(windowDays = 14) {
   const cutoff = addDays(todayKey(), -windowDays);
   const pts = ma.filter((e) => e.d >= cutoff);
   if (pts.length < 3) return null;
-  const x0 = pts[0].d, xs = pts.map((p) => daysBetween(x0, p.d)), ys = pts.map((p) => p.v);
-  const n = xs.length, sx = xs.reduce((a, b) => a + b), sy = ys.reduce((a, b) => a + b);
-  const sxy = xs.reduce((s, x, i) => s + x * ys[i], 0), sxx = xs.reduce((s, x) => s + x * x, 0);
-  const den = n * sxx - sx * sx;
-  if (!den) return null;
-  const slope = (n * sxy - sx * sy) / den; // kg/day (negative = losing)
+  const slope = linRegSlope(pts); // kg/day (negative = losing)
+  if (slope === null) return null;
   return { expenditure: r0(avgIntake - slope * 7700), avgIntake: r0(avgIntake), weeklyChange: r1(slope * 7), days };
 }
 function recommendedTarget(exp) {
@@ -584,11 +617,7 @@ function weightTrendPerDay() {
   const cutoff = addDays(todayKey(), -14);
   const pts = ma.filter((e) => e.d >= cutoff);
   if (pts.length < 3) return null;
-  const x0 = pts[0].d, xs = pts.map((p) => daysBetween(x0, p.d)), ys = pts.map((p) => p.v);
-  const n = xs.length, sx = xs.reduce((a, b) => a + b), sy = ys.reduce((a, b) => a + b);
-  const sxy = xs.reduce((s, x, i) => s + x * ys[i], 0), sxx = xs.reduce((s, x) => s + x * x, 0);
-  const den = n * sxx - sx * sx;
-  return den ? (n * sxy - sx * sy) / den : null;
+  return linRegSlope(pts);
 }
 
 /* ---------- onboarding ---------- */
@@ -712,6 +741,11 @@ function obSummary() {
 // Shown once per version bump to an existing user (never on first install —
 // obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
 const WHATS_NEW = {
+  "3.10.1": [
+    "Saving a food from Quick Add, Photo or a barcode scan now always lands you on the Custom tab, even when the food sheet wasn't already open.",
+    "If your device ever runs out of storage, FitTrack now tells you instead of failing silently.",
+    "Shared library and update checks time out cleanly instead of hanging when the connection drops.",
+  ],
   "3.10.0": [
     "Display name — set yours under Settings → Profile; it's shown next to foods you publish so everyone can see who shared what.",
     "Shared tab: pull down to refresh the list.",
@@ -1178,7 +1212,7 @@ async function checkForUpdate() {
   const last = state.settings.lastUpdateCheck;
   if (last && Date.now() - new Date(last).getTime() < UPDATE_CHECK_EVERY_H * 3600e3) return;
   try {
-    const pkg = await (await fetch(UPDATE_CHECK_URL, { cache: "no-store" })).json();
+    const pkg = await (await apiFetch(UPDATE_CHECK_URL, { cache: "no-store" })).json();
     if (!pkg || !pkg.version) return;
     state.settings.lastUpdateCheck = new Date().toISOString();
     state.settings.updateAvail = cmpVer(pkg.version, APP_VERSION) > 0 ? pkg.version : null;
@@ -1728,6 +1762,16 @@ function openFoodSheet() {
   $("#foodSheet").classList.remove("hidden");
   renderFoodList();
 }
+// Tail of every "saved to your library" flow (quick add, photo, barcode,
+// multi-item). Opening the sheet resets the tab to All, so select Custom
+// after that — the old inline copies set it first and had it reset out from
+// under them whenever the sheet wasn't already open.
+function showCustomTab() {
+  if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
+  sheetTab = "custom";
+  $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
+  renderFoodList();
+}
 wireSheetClose("foodSheet", "sheetClose");
 $("#foodTabs").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
@@ -1847,7 +1891,7 @@ function renderFoodList() {
 async function fetchSharedFoods() {
   sharedLoading = true;
   try {
-    const data = await (await fetch(SHARED_FOODS_API + "/foods")).json();
+    const data = await (await apiFetch(SHARED_FOODS_API + "/foods")).json();
     sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, rid: r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "" }));
   } catch (e) { sharedFoods = null; }
   sharedLoading = false;
@@ -1874,9 +1918,7 @@ function renderSharedList() {
   $$("#foodList [data-savesh]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();
     const f = shown[+b.dataset.savesh];
-    const existing = state.customFoods.find((c) => c.name.toLowerCase() === f.name.toLowerCase());
-    if (existing) Object.assign(existing, { serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f });
-    else state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f });
+    upsertCustomFood({ name: f.name, serving: f.serving, kcal: f.kcal, p: f.p, c: f.c, f: f.f });
     save(); haptic("light");
     toast(`Saved "${f.name}" to your custom foods`);
   }));
@@ -1890,7 +1932,7 @@ function renderSharedList() {
 }
 async function deleteSharedFood(f) {
   try {
-    const res = await fetch(`${SHARED_FOODS_API}/foods/${f.rid}`, { method: "DELETE" });
+    const res = await apiFetch(`${SHARED_FOODS_API}/foods/${f.rid}`, { method: "DELETE" });
     if (!res.ok && res.status !== 404) throw new Error("server error " + res.status);
     sharedFoods = (sharedFoods || []).filter((x) => x.rid !== f.rid);
     if (sheetTab === "shared") renderFoodList();
@@ -1923,7 +1965,7 @@ async function publishFood(f, rid) {
   try {
     const body = { name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0, by: state.settings.shareName };
     if (rid) body.id = rid;
-    const res = await fetch(SHARED_FOODS_API + "/foods", {
+    const res = await apiFetch(SHARED_FOODS_API + "/foods", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -2047,9 +2089,7 @@ $("#detailAdd").addEventListener("click", () => {
   // Barcode / online results (per-100g, not yet in the library) get saved so
   // they're reusable next time — the meal gets the scaled portion.
   if (detail.mode === "per100" && f.name && !f.id) {
-    const existing = state.customFoods.find((c) => c.name.toLowerCase() === f.name.toLowerCase());
-    if (existing) Object.assign(existing, { serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
-    else state.customFoods.unshift({ id: "c" + Date.now(), name: f.name, serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
+    upsertCustomFood({ name: f.name, serving: "100 g", kcal: f.kcal, p: f.p || 0, c: f.c || 0, f: f.f || 0 });
   }
   addFoodItem({ name: f.name, kcal: r0(f.kcal * k), p: r2((f.p || 0) * k), c: r2((f.c || 0) * k), f: r2((f.f || 0) * k), qtyLabel, ts }, f);
   $("#detailSheet").classList.add("hidden"); $("#foodSheet").classList.add("hidden");
@@ -2317,17 +2357,13 @@ $("#multiItemsSaveBtn").addEventListener("click", () => {
   let saved = 0;
   for (const it of multiParsedItems) {
     const serving = it.serving_g ? `${it.serving_g} g` : "1 serving";
-    const existing = state.customFoods.find((c) => c.name.toLowerCase() === it.name.toLowerCase());
-    if (existing) Object.assign(existing, { serving, kcal: it.kcal, p: it.p, c: it.c, f: it.f });
-    else state.customFoods.unshift({ id: "c" + Date.now() + saved, name: it.name, serving, kcal: it.kcal, p: it.p, c: it.c, f: it.f });
+    upsertCustomFood({ name: it.name, serving, kcal: it.kcal, p: it.p, c: it.c, f: it.f });
     saved++;
   }
   save();
   exitMultiReview();
   $("#quickSheet").classList.add("hidden");
-  sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
-  if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
-  renderFoodList();
+  showCustomTab();
   toast(`Saved ${saved} item${saved === 1 ? "" : "s"} to your library`);
 });
 wireSheetClose("quickSheet", "quickClose");
@@ -2386,14 +2422,10 @@ $("#quickSave").addEventListener("click", () => {
     // Quick Add / Photo(ai): create-then-log is split like Custom food — save the
     // food to the library and show it there; the user taps it to add to a meal.
     const serving = $("#qServing").value.trim() || (aiServingG ? `${aiServingG} g` : "1 serving");
-    const existing = state.customFoods.find((c) => c.name.toLowerCase() === food.name.toLowerCase());
-    if (existing) Object.assign(existing, { serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
-    else state.customFoods.unshift({ id: "c" + Date.now(), name: food.name, serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
+    upsertCustomFood({ name: food.name, serving, kcal: food.kcal, p: food.p, c: food.c, f: food.f });
     save();
     $("#quickSheet").classList.add("hidden");
-    sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
-    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
-    renderFoodList();
+    showCustomTab();
     toast("Saved to your library — tap it to add");
   }
 });
@@ -2638,13 +2670,9 @@ async function lookupBarcode(code) {
     // there like any other food — same create-then-log split as Custom.
     const name = p.product_name || "Product";
     const food = { name, serving: "100 g", kcal: +n["energy-kcal_100g"] || 0, p: +n["proteins_100g"] || 0, c: +n["carbohydrates_100g"] || 0, f: +n["fat_100g"] || 0 };
-    const existing = state.customFoods.find((c) => c.name.toLowerCase() === name.toLowerCase());
-    if (existing) Object.assign(existing, food);
-    else state.customFoods.unshift({ id: "c" + Date.now(), ...food });
+    upsertCustomFood(food);
     save();
-    sheetTab = "custom"; $$("#foodTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "custom"));
-    if ($("#foodSheet").classList.contains("hidden")) openFoodSheet();
-    renderFoodList();
+    showCustomTab();
     toast(`${name} saved to your library — tap it to add`);
   } catch (e) { $("#scanStatus").textContent = "Lookup failed — check your connection."; setTimeout(() => resumeScan(instance), 1200); }
 }
