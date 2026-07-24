@@ -10,7 +10,7 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const r2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const calcAvg = (arr, decimals) => arr.length ? (decimals ? r1 : r0)(arr.reduce((x, y) => x + y, 0) / arr.length) : null;
-const APP_VERSION = "3.10.1";
+const APP_VERSION = "3.11.0";
 // Shared food library backend (Cloudflare Worker + D1 — see worker/README.md).
 // Empty string disables the feature: the Shared tab is hidden and the share
 // button on custom foods falls back to the old file export.
@@ -322,7 +322,7 @@ function defaultState() {
     trainingSchedule: defaultTrainingSchedule(),
     trainingBreak: null, // {from, until} date-key range; overrides the weekly pattern without editing it
     workoutNotifs: {}, // workoutId -> {enabled, time}
-    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, tourDismissed: false, lastBackup: null, backupSnoozeUntil: null, shareName: null, updateAvail: null, updateDismissed: null, lastUpdateCheck: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
+    settings: { theme: "dark", apiKey: "", reminder: { enabled: false, time: "19:00" }, weeklyReview: { enabled: false }, waterEnabled: true, reduceMotion: false, haptics: true, weekStart: "mon", lastSeenVersion: null, tourDismissed: false, lastBackup: null, backupSnoozeUntil: null, shareName: null, libraryKey: "", deviceId: null, updateAvail: null, updateDismissed: null, lastUpdateCheck: null, timer: { mode: "emom", emomInt: 60, emomRounds: 10, amrapMins: 10, program: [] } },
   };
 }
 function loadState() {
@@ -347,6 +347,8 @@ function loadState() {
       if (s.settings.lastBackup === undefined) s.settings.lastBackup = null;
       if (s.settings.backupSnoozeUntil === undefined) s.settings.backupSnoozeUntil = null;
       if (s.settings.shareName === undefined) s.settings.shareName = null;
+      if (s.settings.libraryKey === undefined) s.settings.libraryKey = "";
+      if (s.settings.deviceId === undefined) s.settings.deviceId = null;
       if (s.settings.updateAvail === undefined) s.settings.updateAvail = null;
       if (s.settings.updateDismissed === undefined) s.settings.updateDismissed = null;
       if (s.settings.lastUpdateCheck === undefined) s.settings.lastUpdateCheck = null;
@@ -741,6 +743,11 @@ function obSummary() {
 // Shown once per version bump to an existing user (never on first install —
 // obFinish() stamps lastSeenVersion immediately so brand-new users skip it).
 const WHATS_NEW = {
+  "3.11.0": [
+    "The shared food library is no longer open to the internet. Browsing works for everyone, but publishing, editing and deleting now need a library key — paste it once under Settings → Shared food library.",
+    "Foods you publish now belong to you: only the device that added a food can edit or delete it, so nobody can overwrite or wipe someone else's entry. Edit and delete buttons only appear on your own foods.",
+    "The library is snapshotted daily on the server, so an accidental delete can be recovered.",
+  ],
   "3.10.1": [
     "Saving a food from Quick Add, Photo or a barcode scan now always lands you on the Custom tab, even when the food sheet wasn't already open.",
     "If your device ever runs out of storage, FitTrack now tells you instead of failing silently.",
@@ -1888,11 +1895,38 @@ function renderFoodList() {
 }
 
 /* Shared food library */
+// Opaque per-install id the server stamps on rows this device publishes, so
+// only this device can later edit or delete them. Generated once, kept in
+// settings, and carried by backups/exports (restoring a backup on a new phone
+// keeps ownership of the foods you shared).
+function deviceId() {
+  if (!state.settings.deviceId) {
+    const b = new Uint8Array(12);
+    (crypto.getRandomValues ? crypto : window.crypto).getRandomValues(b);
+    state.settings.deviceId = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    save();
+  }
+  return state.settings.deviceId;
+}
+function libraryKey() { return (state.settings.libraryKey || "").trim(); }
+// Rows with no owner predate ownership tracking (or came from a server that
+// doesn't report it) — any key holder may adopt those.
+function canEditShared(f) { return !!libraryKey() && (!f.owner || f.owner === deviceId()); }
+function writeHeaders(extra) {
+  return { ...(extra || {}), "X-FitTrack-Key": libraryKey(), "X-FitTrack-Owner": deviceId() };
+}
+// Turns a failed write into something the user can act on.
+async function apiError(res) {
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) return "Library key missing or wrong — check Settings → Shared food library.";
+  if (res.status === 403) return "That food was added by someone else, so only they can change it.";
+  return body.error || "server error " + res.status;
+}
 async function fetchSharedFoods() {
   sharedLoading = true;
   try {
     const data = await (await apiFetch(SHARED_FOODS_API + "/foods")).json();
-    sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, rid: r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "" }));
+    sharedFoods = (data.foods || []).map((r) => ({ id: "sh" + r.id, rid: r.id, name: r.name, serving: r.serving || "100 g", kcal: +r.kcal || 0, p: +r.p || 0, c: +r.c || 0, f: +r.f || 0, by: r.by || "", owner: r.owner || "" }));
   } catch (e) { sharedFoods = null; }
   sharedLoading = false;
 }
@@ -1906,12 +1940,14 @@ function renderSharedList() {
   const rows = q ? sharedFoods.filter((f) => f.name.toLowerCase().includes(q)) : sharedFoods;
   if (!rows.length) { $("#foodList").innerHTML = `<div class="food-empty">${q ? "No match in the shared library." : "Nothing shared yet — publish one of your custom foods with its share button.<br>Pull down to refresh."}</div>`; return; }
   const shown = rows.slice(0, 80);
+  // Edit/delete only appear on rows this install may actually change — the
+  // server enforces the same rule, this just avoids offering a doomed tap.
   $("#foodList").innerHTML = shown.map((f, i) => `<li class="food-row" data-i="${i}">
       <div class="fr-main"><div class="fr-name">${esc(f.name)}</div><div class="fr-sub">${esc(f.serving || "")}${f.by ? " · by " + esc(f.by) : ""}${macroTags(f)}</div></div>
       <span class="fr-kcal">${r0(f.kcal)}</span>
       <button class="fi-save" data-savesh="${i}" title="Save to my custom foods"><span class="ic" data-ic="copy"></span></button>
-      <button class="fi-edit" data-editsh="${i}"><span class="ic" data-ic="pencil"></span></button>
-      <button class="fi-del" data-delsh="${i}"><span class="ic" data-ic="x"></span></button>
+      ${canEditShared(f) ? `<button class="fi-edit" data-editsh="${i}"><span class="ic" data-ic="pencil"></span></button>
+      <button class="fi-del" data-delsh="${i}"><span class="ic" data-ic="x"></span></button>` : ""}
     </li>`).join("");
   renderIcons($("#foodList"));
   $$("#foodList .food-row").forEach((li) => li.addEventListener("click", () => openDetail(shown[+li.dataset.i], "serving")));
@@ -1932,8 +1968,8 @@ function renderSharedList() {
 }
 async function deleteSharedFood(f) {
   try {
-    const res = await apiFetch(`${SHARED_FOODS_API}/foods/${f.rid}`, { method: "DELETE" });
-    if (!res.ok && res.status !== 404) throw new Error("server error " + res.status);
+    const res = await apiFetch(`${SHARED_FOODS_API}/foods/${f.rid}`, { method: "DELETE", headers: writeHeaders() });
+    if (!res.ok && res.status !== 404) throw new Error(await apiError(res));
     sharedFoods = (sharedFoods || []).filter((x) => x.rid !== f.rid);
     if (sheetTab === "shared") renderFoodList();
     toast(`Removed "${f.name}" from the shared library`);
@@ -1955,6 +1991,9 @@ function openEditSharedFood(f) {
 // row in place (rename-safe); without, it's a new publish (same name upserts).
 // Returns true on success so callers can keep their sheet open on failure.
 async function publishFood(f, rid) {
+  // Publishing is key-gated server-side; say so up front rather than letting
+  // the request come back 401.
+  if (!libraryKey()) { toast("Add the library key in Settings → Shared food library to publish."); return false; }
   // One-time (skippable) name prompt so friends can see who shared what —
   // editable later under Settings → Profile → Display name.
   if (state.settings.shareName == null) {
@@ -1966,10 +2005,10 @@ async function publishFood(f, rid) {
     const body = { name: f.name, serving: f.serving || "100 g", kcal: f.kcal || 0, p: f.p || 0, c: f.c || 0, f: f.f || 0, by: state.settings.shareName };
     if (rid) body.id = rid;
     const res = await apiFetch(SHARED_FOODS_API + "/foods", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: writeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
-    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "server error " + res.status); }
+    if (!res.ok) throw new Error(await apiError(res));
     sharedFoods = null; // refetch next time the Shared tab opens
     toast(rid ? `Updated "${f.name}" in the shared library` : `Published "${f.name}" to the shared library`);
     return true;
@@ -4742,6 +4781,10 @@ function renderSettings() {
   $("#setSex").value = p.sex;
   $("#setStartWeight").value = r1(p.startWeightKg);
   $("#setShareName").value = state.settings.shareName || "";
+  $("#setLibraryKey").value = state.settings.libraryKey || "";
+  $("#libraryKeyInfo").textContent = libraryKey()
+    ? "Key saved — you can publish, and edit or delete the foods you added."
+    : "No key yet — you can browse and save shared foods, but not publish.";
   $("#setWeekStart").value = state.settings.weekStart || "mon";
   $("#setWaterEnabled").checked = state.settings.waterEnabled;
   $("#setReduceMotion").checked = !!state.settings.reduceMotion;
@@ -5090,6 +5133,13 @@ $("#goalAddBtn").addEventListener("click", () => {
     toast("Goal added");
   }
   resetGoalForm(); toggleGoalForm(false); save(); renderGoalSettings();
+});
+$("#libraryKeySave").addEventListener("click", () => {
+  state.settings.libraryKey = $("#setLibraryKey").value.trim();
+  save();
+  sharedFoods = null; // ownership depends on the key, so re-render from scratch
+  renderSettings();
+  toast(state.settings.libraryKey ? "Library key saved" : "Library key cleared");
 });
 $("#apiKeySave").addEventListener("click", () => { state.settings.apiKey = $("#setApiKey").value.trim(); save(); toast(state.settings.apiKey ? "API key saved" : "API key cleared"); });
 $("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.settings.theme = b.dataset.val; applyTheme(); save(); renderSettings(); });
